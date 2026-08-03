@@ -1,0 +1,9 @@
+SecLLM
+Copyright 2026 Austin Probe
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+SecLLM is a control plane and console for vLLM (https://github.com/vllm-project/vllm),
+the third-party inference engine it manages. vLLM is distributed under its own license and
+is not included in this repository; it is installed on a GPU host at deploy time. Model
+weights are likewise not distributed here — they are downloaded under their own licenses.

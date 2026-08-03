@@ -1,0 +1,45 @@
+{
+  "_note": "SecLLM model catalog. Default set is US-origin open-weight models (SecRouter supply-chain posture). Copy to models.json, edit, and point SECLLM_CATALOG at it. Add any model you like — PRC-jurisdiction models are simply excluded from the shipped defaults.",
+  "models": [
+    {
+      "id": "fast",
+      "name": "Fast — Llama 3.2 3B",
+      "description": "Small Meta model; low latency for simple tasks.",
+      "hf_model": "meta-llama/Llama-3.2-3B-Instruct",
+      "origin": "US (Meta)",
+      "size_class": "small",
+      "context_length": 16384,
+      "vllm_args": ["--max-model-len", "16384"]
+    },
+    {
+      "id": "balanced",
+      "name": "Balanced — Llama 3.1 8B",
+      "description": "General-purpose 8B; solid quality at moderate GPU cost.",
+      "hf_model": "meta-llama/Llama-3.1-8B-Instruct",
+      "origin": "US (Meta)",
+      "size_class": "medium",
+      "context_length": 16384,
+      "vllm_args": ["--max-model-len", "16384"]
+    },
+    {
+      "id": "reasoning",
+      "name": "Reasoning — gpt-oss-20b",
+      "description": "OpenAI open-weight reasoning model; efficient. Same family SecRouter defaults to on Bedrock.",
+      "hf_model": "openai/gpt-oss-20b",
+      "origin": "US (OpenAI)",
+      "size_class": "medium",
+      "context_length": 32768,
+      "vllm_args": []
+    },
+    {
+      "id": "large",
+      "name": "Large — Llama 3.3 70B",
+      "description": "High quality; needs a large or multi-GPU host.",
+      "hf_model": "meta-llama/Llama-3.3-70B-Instruct",
+      "origin": "US (Meta)",
+      "size_class": "large",
+      "context_length": 32768,
+      "vllm_args": ["--tensor-parallel-size", "2"]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# runtime state, secrets, downloaded weights — NEVER commit
+data/
+models/
+*.log
+.env
+
+# keep example env/catalog
+!models.example.json
+
+# The full lock resolves the heavy, host/CUDA-specific vllm extra tree; resolve it on
+# the GPU host instead of pinning it here.
+uv.lock

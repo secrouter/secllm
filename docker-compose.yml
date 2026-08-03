@@ -1,0 +1,35 @@
+# SecLLM on a GPU host (Linux + NVIDIA). Requires the NVIDIA Container Toolkit.
+#   SECLLM_ADMIN_TOKEN=$(openssl rand -hex 24) HUGGING_FACE_HUB_TOKEN=hf_... docker compose up -d --build
+name: secllm
+
+services:
+  secllm:
+    build:
+      context: .
+      args:
+        VLLM_TAG: ${VLLM_TAG:-latest}
+    image: secrouter/secllm:1.0.0
+    environment:
+      SECLLM_ADMIN_TOKEN: ${SECLLM_ADMIN_TOKEN:?set SECLLM_ADMIN_TOKEN}
+      SECLLM_MAX_LOADED: ${SECLLM_MAX_LOADED:-1}
+      SECLLM_AUTOSTART: ${SECLLM_AUTOSTART:-}
+      # Gated models (e.g. Llama) need a Hugging Face token to download weights.
+      HUGGING_FACE_HUB_TOKEN: ${HUGGING_FACE_HUB_TOKEN:-}
+    ports:
+      - "11400:11400"   # OpenAI endpoint + console at /admin
+    volumes:
+      - secllm-data:/var/lib/secllm
+      - hf-cache:/root/.cache/huggingface   # persist downloaded weights
+    ipc: host             # vLLM needs a large /dev/shm
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  secllm-data:
+  hf-cache:
