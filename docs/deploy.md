@@ -54,6 +54,19 @@ Don't expose SecLLM's `/v1` directly to users — it has no per-user auth. Put i
 egress allow-list and let the gateway handle OIDC, policy, budgets, and audit. See the README
 for the provider + egress snippet.
 
+By default `/v1` is open, relying on network isolation (SecLLM sitting behind SecRouter / not
+publicly reachable). For defense in depth — e.g. when serving CUI — set `SECLLM_API_TOKEN` to
+require `Authorization: Bearer <token>` on every `/v1/*` request:
+
+```bash
+export SECLLM_API_TOKEN=$(openssl rand -hex 24)
+```
+
+Configure the matching token on the SecRouter side via `SECROUTER_SECLLM_TOKEN` so it's sent
+as the bearer auth for the `secllm` provider (same token across every instance in a pool — see
+"Running multiple instances" in the README). `GET /health` is never gated by this token; it
+stays open for liveness/monitoring/SecRouter's circuit breaker probes.
+
 ## Models & licenses
 
 Weights are downloaded at load time from Hugging Face under their own licenses; accept the

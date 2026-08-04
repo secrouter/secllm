@@ -30,6 +30,7 @@ class Config:
     port: int
     admin_token: str
     admin_token_generated: bool
+    api_token: str  # bearer token required on /v1/* when non-empty; "" = open (default)
     data_dir: Path
     catalog_path: str  # path to a models.json, or "" for the built-in catalog
     backend: str  # "vllm" | "mock"
@@ -60,6 +61,7 @@ class Config:
             port=_int("SECLLM_PORT", 11400),
             admin_token=token,
             admin_token_generated=generated,
+            api_token=_env("SECLLM_API_TOKEN", "").strip(),
             data_dir=Path(_env("SECLLM_DATA_DIR", "./data")).expanduser(),
             catalog_path=_env("SECLLM_CATALOG", ""),
             backend=backend,
