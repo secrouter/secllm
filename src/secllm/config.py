@@ -7,7 +7,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-BACKENDS = {"vllm", "mock"}
+BACKENDS = {"vllm", "mock", "mlx"}
 
 
 def _env(name: str, default: str) -> str:
@@ -33,7 +33,7 @@ class Config:
     api_token: str  # bearer token required on /v1/* when non-empty; "" = open (default)
     data_dir: Path
     catalog_path: str  # path to a models.json, or "" for the built-in catalog
-    backend: str  # "vllm" | "mock"
+    backend: str  # "vllm" | "mock" | "mlx"
     worker_host: str
     worker_port_base: int
     max_loaded: int  # concurrent loaded models (a single GPU is usually 1)

@@ -24,6 +24,11 @@ class Model:
     size_class: str = "medium"  # small | medium | large
     context_length: int = 0
     vllm_args: list[str] = field(default_factory=list)
+    # The MLX-converted repo id (e.g. "mlx-community/...-4bit") the mlx backend loads instead of
+    # hf_model — MLX's fast path wants pre-quantized weights in its own format, not raw vLLM
+    # safetensors (see backends/mlx_server.py). Empty (the default) falls back to hf_model, which
+    # only works if that repo happens to already be MLX-format.
+    mlx_model: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -34,6 +39,7 @@ class Model:
             "origin": self.origin,
             "size_class": self.size_class,
             "context_length": self.context_length,
+            "mlx_model": self.mlx_model,
         }
 
 
@@ -62,11 +68,14 @@ class Catalog:
                 size_class=m.get("size_class", "medium"),
                 context_length=m.get("context_length", 0),
                 vllm_args=list(m.get("vllm_args", [])),
+                mlx_model=m.get("mlx_model", ""),
             )
         return Catalog(models=models)
 
 
 # Built-in default catalog — US-origin open-weight models only.
+# mlx_model: the MLX-converted repo the "mlx" backend loads (Apple Silicon — see
+# backends/mlx_server.py); hf_model stays the vLLM (GPU/Linux) repo either way.
 _BUILTIN = r"""
 {
   "_note": "US-origin open-weight models (SecRouter supply-chain posture). Edit + point SECLLM_CATALOG at your own file to change this; PRC-jurisdiction models are excluded from the defaults.",
@@ -76,6 +85,7 @@ _BUILTIN = r"""
       "name": "Fast — Llama 3.2 3B",
       "description": "Small Meta model; low latency for simple tasks.",
       "hf_model": "meta-llama/Llama-3.2-3B-Instruct",
+      "mlx_model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
       "origin": "US (Meta)",
       "size_class": "small",
       "context_length": 16384,
@@ -86,6 +96,7 @@ _BUILTIN = r"""
       "name": "Balanced — Llama 3.1 8B",
       "description": "General-purpose 8B; solid quality at moderate GPU cost.",
       "hf_model": "meta-llama/Llama-3.1-8B-Instruct",
+      "mlx_model": "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
       "origin": "US (Meta)",
       "size_class": "medium",
       "context_length": 16384,
@@ -96,6 +107,7 @@ _BUILTIN = r"""
       "name": "Reasoning — gpt-oss-20b",
       "description": "OpenAI open-weight reasoning model; efficient. Same family SecRouter defaults to on Bedrock.",
       "hf_model": "openai/gpt-oss-20b",
+      "mlx_model": "mlx-community/gpt-oss-20b-mlx-q8",
       "origin": "US (OpenAI)",
       "size_class": "medium",
       "context_length": 32768,
@@ -106,10 +118,33 @@ _BUILTIN = r"""
       "name": "Large — Llama 3.3 70B",
       "description": "High quality; needs a large or multi-GPU host.",
       "hf_model": "meta-llama/Llama-3.3-70B-Instruct",
+      "mlx_model": "mlx-community/Llama-3.3-70B-Instruct-4bit",
       "origin": "US (Meta)",
       "size_class": "large",
       "context_length": 32768,
       "vllm_args": ["--tensor-parallel-size", "2"]
+    },
+    {
+      "id": "gemma-31b",
+      "name": "Gemma 4 — 31B",
+      "description": "Google's flagship dense model; 256K context, strong reasoning/coding — bridges server-grade quality and local execution.",
+      "hf_model": "google/gemma-4-31B-it",
+      "mlx_model": "mlx-community/gemma-4-31b-it-4bit",
+      "origin": "US (Google)",
+      "size_class": "medium",
+      "context_length": 262144,
+      "vllm_args": ["--max-model-len", "32768"]
+    },
+    {
+      "id": "gemma-26b",
+      "name": "Gemma 4 — 26B MoE",
+      "description": "Mixture-of-experts (4B active of 26B total); high-throughput reasoning at a fraction of the 31B's per-token cost.",
+      "hf_model": "google/gemma-4-26B-A4B-it",
+      "mlx_model": "mlx-community/gemma-4-26b-a4b-it-4bit",
+      "origin": "US (Google)",
+      "size_class": "medium",
+      "context_length": 262144,
+      "vllm_args": ["--max-model-len", "32768"]
     }
   ]
 }

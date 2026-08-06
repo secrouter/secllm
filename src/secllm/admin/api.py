@@ -24,7 +24,23 @@ def _worker_view(w: Worker) -> dict[str, Any]:
         "port": w.port,
         "restarts": w.restarts,
         "error": w.error,
+        "context_length": w.context_length,  # 0 = catalog default, no override active
     }
+
+
+async def _context_length_from_body(request: Request) -> int:
+    """Optional ``{"context_length": N}`` JSON body on a load/reload POST — 0 (default, also
+    what an absent/empty body yields) means "no override, use the catalog's own default" (see
+    Supervisor.load). A GET-style empty body is the common case (console Load/Reload button
+    pressed with no override typed in), so a missing or unparsable body is never an error here."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 — no body at all is the common, valid case
+        return 0
+    if not isinstance(body, dict):
+        return 0
+    value = body.get("context_length")
+    return int(value) if value else 0
 
 
 def build_router(ctx: Context) -> APIRouter:
@@ -73,11 +89,13 @@ def build_router(ctx: Context) -> APIRouter:
     @router.post("/admin/api/models/{model_id}/load")
     async def load(request: Request, model_id: str) -> JSONResponse:
         require_admin(request)
+        context_length = await _context_length_from_body(request)
         try:
-            worker = ctx.supervisor.load(model_id)
+            worker = ctx.supervisor.load(model_id, context_length=context_length)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-        return JSONResponse({"id": model_id, "state": worker.state, "port": worker.port})
+        return JSONResponse({"id": model_id, "state": worker.state, "port": worker.port,
+                              "context_length": worker.context_length})
 
     @router.post("/admin/api/models/{model_id}/unload")
     async def unload(request: Request, model_id: str) -> JSONResponse:
@@ -88,10 +106,12 @@ def build_router(ctx: Context) -> APIRouter:
     @router.post("/admin/api/models/{model_id}/reload")
     async def reload(request: Request, model_id: str) -> JSONResponse:
         require_admin(request)
+        context_length = await _context_length_from_body(request)
         try:
-            worker = ctx.supervisor.reload(model_id)
+            worker = ctx.supervisor.reload(model_id, context_length=context_length)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
-        return JSONResponse({"id": model_id, "state": worker.state, "restarts": worker.restarts})
+        return JSONResponse({"id": model_id, "state": worker.state, "restarts": worker.restarts,
+                              "context_length": worker.context_length})
 
     return router

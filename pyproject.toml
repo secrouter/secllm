@@ -17,6 +17,9 @@ dependencies = [
 dev = ["pytest>=8", "pytest-asyncio>=0.23"]
 # The real inference backend — GPU/Linux only; installed in the image, never on macOS.
 vllm = ["vllm>=0.6"]
+# The real inference backend on Apple Silicon — installed on macOS instead of vllm (see
+# targets/macos.py); >=0.28 for gpt-oss architecture support (see backends/mlx_server.py).
+mlx = ["mlx-lm>=0.28"]
 
 [project.scripts]
 secllm = "secllm.__main__:main"
