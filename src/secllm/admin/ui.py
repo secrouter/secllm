@@ -23,6 +23,7 @@ CONSOLE_HTML = r"""<!doctype html>
   .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 18px; }
   .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   input[type=password]{ background:var(--panel2); border:1px solid var(--line); color:var(--ink); padding:8px 10px; border-radius:6px; font-family:var(--mono); min-width:280px; }
+  input.ctx { background:var(--panel2); border:1px solid var(--line); color:var(--ink); padding:6px 8px; border-radius:6px; font-family:var(--mono); width:110px; font-size:12.5px; }
   button { background:var(--accent); color:#0b0e12; border:0; padding:7px 13px; border-radius:6px; font-family:var(--mono); font-weight:600; cursor:pointer; }
   button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
   button.danger { background:transparent; color:var(--bad); border:1px solid #4a2a2a; }
@@ -53,7 +54,7 @@ CONSOLE_HTML = r"""<!doctype html>
       <button id="connect">Connect</button>
       <span id="info" class="hint"></span>
     </div>
-    <div class="hint">Load a model to serve it on SecLLM's OpenAI endpoint. On a single GPU, loading a new model <b>switches</b> to it. Point SecRouter at <code>http://&lt;host&gt;:11400/v1</code>.</div>
+    <div class="hint">Load a model to serve it on SecLLM's OpenAI endpoint. On a single GPU, loading a new model <b>switches</b> to it. Point SecRouter at <code>http://&lt;host&gt;:11400/v1</code>. The context field overrides that model's default context length (tokens) for this load only — blank uses the catalog default.</div>
   </section>
   <section class="card">
     <h2 style="margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--dim)">Models</h2>
@@ -69,6 +70,10 @@ async function api(path,opts={}){opts.headers=Object.assign({},opts.headers,toke
 async function loadHealth(){try{const h=await fetch("/health").then(r=>r.json());pill("ok","healthy · "+h.backend);}catch(e){pill("bad","unreachable");}}
 async function refresh(){
   if(!token)return;
+  // Preserve whatever the operator has typed but not yet submitted — refresh runs every 4s
+  // (see setInterval below), and a freshly-rebuilt <input> would otherwise wipe it mid-edit.
+  const typed={};
+  document.querySelectorAll("input.ctx").forEach(el=>{typed[el.dataset.id]=el.value;});
   try{
     const d=await api("/admin/api/models");
     $("info").textContent=`backend: ${d.backend} · max loaded: ${d.max_loaded}`;
@@ -77,19 +82,35 @@ async function refresh(){
       const badge=w?`<span class="badge ${esc(w.state)}">${esc(w.state)}</span>`:'<span class="badge">not loaded</span>';
       const up=w&&w.state==="healthy"?` · up ${Math.round(w.uptime_s)}s`:"";
       const err=w&&w.error?`<div class="meta" style="color:var(--bad)">${esc(w.error)}</div>`:"";
+      const ctxDefault=m.context_length?esc(String(m.context_length)):"unset";
+      const ctxActive=w&&w.context_length?` · <span class="badge">ctx override ${w.context_length}</span>`:"";
+      const ctxInput=`<input class="ctx" type="number" min="1" id="ctx-${esc(m.id)}" data-id="${esc(m.id)}" placeholder="ctx (default ${ctxDefault})" title="context length override (tokens) for the next Load/Reload — blank = catalog default">`;
       let actions;
-      if(!m.loaded) actions=`<button onclick="act('${m.id}','load')">Load</button>`;
-      else actions=`<button class="ghost" onclick="act('${m.id}','reload')">Reload</button><button class="danger" onclick="act('${m.id}','unload')">Unload</button>`;
+      if(!m.loaded) actions=`${ctxInput}<button onclick="act('${m.id}','load')">Load</button>`;
+      else actions=`${ctxInput}<button class="ghost" onclick="act('${m.id}','reload')">Reload</button><button class="danger" onclick="act('${m.id}','unload')">Unload</button>`;
       return `<div class="model"><div>
-        <h3>${esc(m.name)} ${badge}${up}</h3>
-        <div class="meta"><span class="origin">${esc(m.origin)}</span> · ${esc(m.size_class)} · <code>${esc(m.id)}</code> · ${esc(m.hf_model)}</div>
+        <h3>${esc(m.name)} ${badge}${up}${ctxActive}</h3>
+        <div class="meta"><span class="origin">${esc(m.origin)}</span> · ${esc(m.size_class)} · <code>${esc(m.id)}</code> · ${esc(m.hf_model)} · context: ${ctxDefault}</div>
         <div class="desc">${esc(m.description)}</div>${err}
       </div><div class="actions">${actions}</div></div>`;
     }).join("");
+    document.querySelectorAll("input.ctx").forEach(el=>{
+      if(typed[el.dataset.id])el.value=typed[el.dataset.id];
+    });
   }catch(e){$("models").innerHTML='<div class="hint">'+esc(e.message)+' — check the admin token</div>';}
 }
 async function act(id,verb){
-  try{await api(`/admin/api/models/${id}/${verb}`,{method:"POST"});setTimeout(refresh,300);}
+  try{
+    const body={};
+    if(verb==="load"||verb==="reload"){
+      const el=$("ctx-"+id);
+      const v=el&&el.value.trim();
+      if(v)body.context_length=parseInt(v,10);
+    }
+    await api(`/admin/api/models/${id}/${verb}`,
+      {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    setTimeout(refresh,300);
+  }
   catch(e){alert(verb+" failed: "+e.message);}
 }
 $("connect").onclick=()=>{token=$("token").value.trim();localStorage.setItem("secllm_token",token);refresh();};
