@@ -90,3 +90,30 @@ async def test_admin_gating(stack):
         r = await c.get("/admin/api/models", headers=ADMIN)
         assert r.status_code == 200
         assert any(m["id"] == "fast" for m in r.json()["models"])
+
+
+async def test_load_with_context_override_via_admin_api(stack):
+    # The mock backend ignores context_length for its own launch command (see
+    # build_launch_command) — this exercises the API/supervisor plumbing that's shared with
+    # the real vllm/mlx backends: Worker.context_length round-trips through load, is visible
+    # in /admin/api/models, and reload() without an explicit value carries it forward.
+    app, ctx = stack
+    async with _client(app) as c:
+        r = await c.post("/admin/api/models/fast/load", headers=ADMIN,
+                         json={"context_length": 4096})
+        assert r.status_code == 200 and r.json()["context_length"] == 4096
+    await _wait_healthy(ctx, "fast")
+
+    async with _client(app) as c:
+        r = await c.get("/admin/api/models", headers=ADMIN)
+        fast = next(m for m in r.json()["models"] if m["id"] == "fast")
+        assert fast["worker"]["context_length"] == 4096
+
+        # Reload with no body carries the prior override forward, not resetting to default.
+        r = await c.post("/admin/api/models/fast/reload", headers=ADMIN, json={})
+        assert r.status_code == 200 and r.json()["context_length"] == 4096
+
+        # An explicit new value on reload replaces it.
+        r = await c.post("/admin/api/models/fast/reload", headers=ADMIN,
+                         json={"context_length": 2048})
+        assert r.status_code == 200 and r.json()["context_length"] == 2048

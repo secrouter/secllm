@@ -31,6 +31,10 @@ class Worker:
     consecutive_failures: int = 0
     restarts: int = 0
     error: str = ""
+    # 0 = no admin-supplied override — this worker is running at the catalog's own
+    # vllm_args/mlx defaults. >0 = the context length (tokens) actually passed to the backend
+    # via build_launch_command, overriding the catalog default for THIS worker only.
+    context_length: int = 0
 
     @property
     def base_url(self) -> str:
@@ -55,7 +59,11 @@ class Supervisor:
 
     # ---- lifecycle ---------------------------------------------------------
 
-    def load(self, model_id: str) -> Worker:
+    def load(self, model_id: str, context_length: int = 0) -> Worker:
+        """Load ``model_id``, optionally overriding its catalog context length (tokens) for
+        THIS worker only — 0 (the default) leaves the catalog's own vllm_args/mlx defaults
+        untouched, exactly as before this parameter existed. Ignored if the model is already
+        loaded (the existing early-return below), same as any other load-while-loaded call."""
         if model_id in self.workers and self.workers[model_id].state != "stopped":
             return self.workers[model_id]
         model = self.catalog.get(model_id)
@@ -70,7 +78,7 @@ class Supervisor:
             active = [w for w in self.workers.values() if w.state != "stopped"]
 
         port = self._alloc_port()
-        cmd = build_launch_command(self.cfg, model, port)
+        cmd = build_launch_command(self.cfg, model, port, context_length=context_length or None)
         log = open(self._logdir / f"{model_id}.log", "ab", buffering=0)  # noqa: SIM115
         proc = subprocess.Popen(  # noqa: S603
             cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.cfg.data_dir)
@@ -78,7 +86,7 @@ class Supervisor:
         self._seq += 1
         worker = Worker(
             model_id=model_id, host=self.cfg.worker_host, port=port,
-            process=proc, loaded_seq=self._seq,
+            process=proc, loaded_seq=self._seq, context_length=context_length,
         )
         self.workers[model_id] = worker
         return worker
@@ -95,13 +103,18 @@ class Supervisor:
                 worker.process.kill()
         worker.state = "stopped"
 
-    def reload(self, model_id: str) -> Worker:
+    def reload(self, model_id: str, context_length: int = 0) -> Worker:
+        """Restart ``model_id``. ``context_length`` explicitly given (>0) sets the new
+        override; omitted (0) carries forward whatever override (if any) was already running
+        — a plain "restart with the same config" — rather than silently resetting to the
+        catalog default."""
         if not self.catalog.get(model_id):
             raise KeyError(f"unknown model {model_id!r}")
         prior = self.workers.get(model_id)
         restarts = (prior.restarts + 1) if prior else 0
+        effective = context_length or (prior.context_length if prior else 0)
         self.unload(model_id)
-        worker = self.load(model_id)
+        worker = self.load(model_id, context_length=effective)
         worker.restarts = restarts
         return worker
 
