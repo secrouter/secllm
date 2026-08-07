@@ -55,7 +55,7 @@ def build_launch_command(
         cmd = [
             sys.executable, "-m", "secllm.backends.mlx_server",
             "--host", cfg.worker_host, "--port", str(port), "--model", model.id,
-            "--hf-model", model.mlx_model or model.hf_model,
+            "--hf-model", model.repo_id("mlx"),
         ]
         if context_length is not None:
             cmd += ["--max-context", str(context_length)]

@@ -11,6 +11,7 @@ from .admin.api import build_router as build_admin_router
 from .catalog import Catalog
 from .config import Config
 from .context import Context
+from .downloads import Downloads
 from .health import HealthMonitor
 from .router import build_router as build_openai_router
 from .supervisor import Supervisor
@@ -24,7 +25,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     catalog = Catalog.load(config.catalog_path or None)
     supervisor = Supervisor(config, catalog)
     health = HealthMonitor(config, supervisor)
-    ctx = Context(config=config, catalog=catalog, supervisor=supervisor, health=health)
+    downloads = Downloads()
+    ctx = Context(config=config, catalog=catalog, supervisor=supervisor, health=health,
+                  downloads=downloads)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):

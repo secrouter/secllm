@@ -11,6 +11,10 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "httpx>=0.27",
+    # Direct dep (not just transitive via the mlx/vllm extras): the admin console's download
+    # button (downloads.py) needs to check/trigger HF Hub caching regardless of which
+    # inference backend is actually installed.
+    "huggingface_hub>=0.24",
 ]
 
 [project.optional-dependencies]

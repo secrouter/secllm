@@ -25,6 +25,7 @@ def stack(request, tmp_path, monkeypatch):
     from secllm.catalog import Catalog
     from secllm.config import Config
     from secllm.context import Context
+    from secllm.downloads import Downloads
     from secllm.health import HealthMonitor
     from secllm.router import build_router as openai_router
     from secllm.supervisor import Supervisor
@@ -34,7 +35,8 @@ def stack(request, tmp_path, monkeypatch):
     catalog = Catalog.load()
     supervisor = Supervisor(cfg, catalog)
     health = HealthMonitor(cfg, supervisor)
-    ctx = Context(config=cfg, catalog=catalog, supervisor=supervisor, health=health)
+    ctx = Context(config=cfg, catalog=catalog, supervisor=supervisor, health=health,
+                  downloads=Downloads())
 
     app = FastAPI()
     app.include_router(openai_router(ctx))
