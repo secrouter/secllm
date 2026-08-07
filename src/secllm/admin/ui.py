@@ -36,6 +36,7 @@ CONSOLE_HTML = r"""<!doctype html>
   .badge { padding:2px 8px; border-radius:4px; font-size:11px; border:1px solid var(--line); color:var(--dim); }
   .badge.healthy { color:var(--ok); border-color:#2c4a30; } .badge.starting { color:var(--warn); border-color:#4a4020; }
   .badge.unhealthy, .badge.error { color:var(--bad); border-color:#4a2a2a; }
+  .badge.cached { color:var(--ok); border-color:#2c4a30; } .badge.downloading { color:var(--warn); border-color:#4a4020; }
   .origin { color:var(--accent); }
   .actions { display:flex; gap:8px; align-items:flex-start; }
   .hint { color:var(--dim); font-size:12px; margin-top:8px; }
@@ -54,7 +55,7 @@ CONSOLE_HTML = r"""<!doctype html>
       <button id="connect">Connect</button>
       <span id="info" class="hint"></span>
     </div>
-    <div class="hint">Load a model to serve it on SecLLM's OpenAI endpoint. On a single GPU, loading a new model <b>switches</b> to it. Point SecRouter at <code>http://&lt;host&gt;:11400/v1</code>. The context field overrides that model's default context length (tokens) for this load only — blank uses the catalog default.</div>
+    <div class="hint">Load a model to serve it on SecLLM's OpenAI endpoint. On a single GPU, loading a new model <b>switches</b> to it. Point SecRouter at <code>http://&lt;host&gt;:11400/v1</code>. The context field overrides that model's default context length (tokens) for this load only — blank uses the catalog default. <b>Download</b> pre-fetches a model's weights without loading/serving it — useful for warming several models ahead of time; Load downloads automatically too if you skip this.</div>
   </section>
   <section class="card">
     <h2 style="margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--dim)">Models</h2>
@@ -85,12 +86,24 @@ async function refresh(){
       const ctxDefault=m.context_length?esc(String(m.context_length)):"unset";
       const ctxActive=w&&w.context_length?` · <span class="badge">ctx override ${w.context_length}</span>`:"";
       const ctxInput=`<input class="ctx" type="number" min="1" id="ctx-${esc(m.id)}" data-id="${esc(m.id)}" placeholder="ctx (default ${ctxDefault})" title="context length override (tokens) for the next Load/Reload — blank = catalog default">`;
+      // Download: decoupled from Load — pre-fetches weights without starting/serving the
+      // model. Hidden once cached (nothing left to fetch) or already loaded (Load itself
+      // downloads first if needed, so a separate fetch would just be redundant).
+      const downloading=m.download_status==="downloading";
+      let cacheBadge;
+      if(m.cached) cacheBadge='<span class="badge cached">cached</span>';
+      else if(downloading) cacheBadge='<span class="badge downloading">downloading…</span>';
+      else if(m.download_status==="error") cacheBadge='<span class="badge error" title="'+esc(m.download_error)+'">download failed</span>';
+      else cacheBadge='<span class="badge">not cached</span>';
+      const downloadBtn=(!m.cached && !m.loaded)
+        ? `<button class="ghost" onclick="act('${m.id}','download')" ${downloading?"disabled":""}>${downloading?"Downloading…":"Download"}</button>`
+        : "";
       let actions;
-      if(!m.loaded) actions=`${ctxInput}<button onclick="act('${m.id}','load')">Load</button>`;
+      if(!m.loaded) actions=`${downloadBtn}${ctxInput}<button onclick="act('${m.id}','load')">Load</button>`;
       else actions=`${ctxInput}<button class="ghost" onclick="act('${m.id}','reload')">Reload</button><button class="danger" onclick="act('${m.id}','unload')">Unload</button>`;
       return `<div class="model"><div>
         <h3>${esc(m.name)} ${badge}${up}${ctxActive}</h3>
-        <div class="meta"><span class="origin">${esc(m.origin)}</span> · ${esc(m.size_class)} · <code>${esc(m.id)}</code> · ${esc(m.hf_model)} · context: ${ctxDefault}</div>
+        <div class="meta"><span class="origin">${esc(m.origin)}</span> · ${esc(m.size_class)} · <code>${esc(m.id)}</code> · ${esc(m.hf_model)} · context: ${ctxDefault} · ${cacheBadge}</div>
         <div class="desc">${esc(m.description)}</div>${err}
       </div><div class="actions">${actions}</div></div>`;
     }).join("");

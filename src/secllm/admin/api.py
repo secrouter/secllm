@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..context import Context
+from ..downloads import is_cached
 from ..supervisor import Worker
 from .ui import CONSOLE_HTML
 
@@ -76,7 +77,15 @@ def build_router(ctx: Context) -> APIRouter:
         models = []
         for model in ctx.catalog.models.values():
             worker = ctx.supervisor.get(model.id)
-            entry = {**model.to_dict(), "loaded": worker is not None}
+            download = ctx.downloads.status(model.id)
+            entry = {
+                **model.to_dict(), "loaded": worker is not None,
+                # Local-cache-only check (no network) — cheap enough for every poll. Not
+                # meaningful for the mock backend (nothing real ever downloads there), but
+                # harmless — it just always reads as not cached.
+                "cached": is_cached(model.repo_id(ctx.config.backend)),
+                "download_status": download.status, "download_error": download.error,
+            }
             if worker:
                 entry["worker"] = _worker_view(worker)
             models.append(entry)
@@ -85,6 +94,15 @@ def build_router(ctx: Context) -> APIRouter:
             "max_loaded": ctx.config.max_loaded,
             "models": models,
         })
+
+    @router.post("/admin/api/models/{model_id}/download")
+    async def download(request: Request, model_id: str) -> JSONResponse:
+        require_admin(request)
+        model = ctx.catalog.get(model_id)
+        if not model:
+            raise HTTPException(status_code=404, detail=f"unknown model {model_id!r}")
+        state = ctx.downloads.start(model_id, model.repo_id(ctx.config.backend))
+        return JSONResponse({"id": model_id, "download_status": state.status})
 
     @router.post("/admin/api/models/{model_id}/load")
     async def load(request: Request, model_id: str) -> JSONResponse:

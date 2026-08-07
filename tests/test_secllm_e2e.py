@@ -92,6 +92,45 @@ async def test_admin_gating(stack):
         assert any(m["id"] == "fast" for m in r.json()["models"])
 
 
+async def test_admin_api_models_reports_cache_and_download_status(stack, monkeypatch):
+    app, ctx = stack
+    monkeypatch.setattr("secllm.admin.api.is_cached", lambda repo_id: repo_id == "cached/repo")
+    monkeypatch.setattr(ctx.catalog.models["fast"], "hf_model", "cached/repo")
+    async with _client(app) as c:
+        r = await c.get("/admin/api/models", headers=ADMIN)
+        fast = next(m for m in r.json()["models"] if m["id"] == "fast")
+        assert fast["cached"] is True
+        assert fast["download_status"] == "idle"
+
+        balanced = next(m for m in r.json()["models"] if m["id"] == "balanced")
+        assert balanced["cached"] is False
+
+
+async def test_admin_api_download_starts_and_reports_progress(stack, monkeypatch):
+    app, ctx = stack
+    events = []
+
+    def fake_snapshot_download(repo_id, **kwargs):
+        events.append(repo_id)
+        return "/fake/path"
+
+    monkeypatch.setattr("secllm.downloads.snapshot_download", fake_snapshot_download)
+    async with _client(app) as c:
+        r = await c.post("/admin/api/models/fast/download", headers=ADMIN)
+        assert r.status_code == 200
+        assert r.json()["download_status"] in ("downloading", "complete")
+
+        for _ in range(50):
+            if ctx.downloads.status("fast").status != "downloading":
+                break
+            await asyncio.sleep(0.02)
+        assert ctx.downloads.status("fast").status == "complete"
+        assert events  # snapshot_download was genuinely invoked
+
+        r = await c.post("/admin/api/models/nope-not-real/download", headers=ADMIN)
+        assert r.status_code == 404
+
+
 async def test_load_with_context_override_via_admin_api(stack):
     # The mock backend ignores context_length for its own launch command (see
     # build_launch_command) — this exercises the API/supervisor plumbing that's shared with
