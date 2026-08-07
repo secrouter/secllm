@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from .catalog import Catalog
 from .config import Config
+from .downloads import Downloads
 from .health import HealthMonitor
 from .supervisor import Supervisor
 
@@ -16,3 +17,4 @@ class Context:
     catalog: Catalog
     supervisor: Supervisor
     health: HealthMonitor
+    downloads: Downloads
