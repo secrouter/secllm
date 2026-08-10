@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from ..context import Context
 from ..downloads import is_cached
-from ..supervisor import Worker
+from ..supervisor import CapacityError, Worker
 from .ui import CONSOLE_HTML
 
 
@@ -26,6 +26,8 @@ def _worker_view(w: Worker) -> dict[str, Any]:
         "restarts": w.restarts,
         "error": w.error,
         "context_length": w.context_length,  # 0 = catalog default, no override active
+        "gpus": w.gpus,  # device indices this worker is pinned to ([] = unmanaged host)
+        "memory_fraction": w.memory_fraction,  # per-GPU VRAM fraction it reserves (0 = unmanaged)
     }
 
 
@@ -77,14 +79,22 @@ def build_router(ctx: Context) -> APIRouter:
         models = []
         for model in ctx.catalog.models.values():
             worker = ctx.supervisor.get(model.id)
-            download = ctx.downloads.status(model.id)
+            repo_id = model.repo_id(ctx.config.backend)
+            # Live download view: status + error (as before) plus a progress % computed from
+            # the cache blobs on disk vs the repo's known total (see downloads.status_view).
+            download = ctx.downloads.status_view(model.id, repo_id)
             entry = {
                 **model.to_dict(), "loaded": worker is not None,
                 # Local-cache-only check (no network) — cheap enough for every poll. Not
                 # meaningful for the mock backend (nothing real ever downloads there), but
                 # harmless — it just always reads as not cached.
-                "cached": is_cached(model.repo_id(ctx.config.backend)),
-                "download_status": download.status, "download_error": download.error,
+                "cached": is_cached(repo_id),
+                "download_status": download["status"], "download_error": download["error"],
+                "download_downloaded_bytes": download["downloaded_bytes"],
+                "download_total_bytes": download["total_bytes"],
+                "download_percent": download["percent"],
+                # API-call tracking: this model's request/error/latency/token counters.
+                "stats": ctx.stats.for_model(model.id),
             }
             if worker:
                 entry["worker"] = _worker_view(worker)
@@ -92,8 +102,15 @@ def build_router(ctx: Context) -> APIRouter:
         return JSONResponse({
             "backend": ctx.config.backend,
             "max_loaded": ctx.config.max_loaded,
+            "gpu": ctx.supervisor.gpu_summary(),
             "models": models,
         })
+
+    @router.get("/admin/api/stats")
+    async def stats(request: Request) -> JSONResponse:
+        # API-call tracking — per-model + overall request/error counts, avg latency, token totals.
+        require_admin(request)
+        return JSONResponse(ctx.stats.snapshot())
 
     @router.post("/admin/api/models/{model_id}/download")
     async def download(request: Request, model_id: str) -> JSONResponse:
@@ -112,6 +129,8 @@ def build_router(ctx: Context) -> APIRouter:
             worker = ctx.supervisor.load(model_id, context_length=context_length)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        except CapacityError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         return JSONResponse({"id": model_id, "state": worker.state, "port": worker.port,
                               "context_length": worker.context_length})
 
@@ -129,6 +148,8 @@ def build_router(ctx: Context) -> APIRouter:
             worker = ctx.supervisor.reload(model_id, context_length=context_length)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
+        except CapacityError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         return JSONResponse({"id": model_id, "state": worker.state, "restarts": worker.restarts,
                               "context_length": worker.context_length})
 

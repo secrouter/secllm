@@ -69,3 +69,19 @@ def test_build_launch_command_mlx_override_adds_max_context():
 def test_build_launch_command_mock_ignores_context_length():
     cmd = build_launch_command(_cfg("mock"), _model(), port=12000, context_length=16384)
     assert "--max-context" not in cmd and "--max-model-len" not in cmd
+
+
+def test_build_launch_command_vllm_uses_cfg_utilization_by_default():
+    cmd = build_launch_command(_cfg("vllm"), _model(), port=12000)
+    assert cmd[cmd.index("--gpu-memory-utilization") + 1] == "0.9"
+
+
+def test_build_launch_command_vllm_memory_fraction_overrides_utilization():
+    # The scheduler-chosen per-GPU fraction replaces the global default for a co-resident worker.
+    cmd = build_launch_command(_cfg("vllm"), _model(), port=12000, memory_fraction=0.45)
+    assert cmd[cmd.index("--gpu-memory-utilization") + 1] == "0.45"
+
+
+def test_build_launch_command_mlx_ignores_memory_fraction():
+    cmd = build_launch_command(_cfg("mlx"), _model(), port=12000, memory_fraction=0.45)
+    assert "--gpu-memory-utilization" not in cmd and "0.45" not in cmd

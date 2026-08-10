@@ -23,6 +23,12 @@ class Model:
     origin: str  # provenance, e.g. "US (Meta)" — surfaced for supply-chain review
     size_class: str = "medium"  # small | medium | large
     context_length: int = 0
+    # Fraction of ONE GPU this model reserves, for the co-residency scheduler (see gpu.py):
+    # how much VRAM to hand vLLM (--gpu-memory-utilization) and how much of a card it consumes
+    # when deciding whether another model still fits. 0 (the default) falls back to the global
+    # SECLLM_GPU_MEMORY_UTILIZATION. A tensor-parallel model reserves this fraction on EACH GPU
+    # it spans. Left 0 for `large` (it's TP across whole cards, so per-card packing is moot).
+    vram_fraction: float = 0.0
     vllm_args: list[str] = field(default_factory=list)
     # The MLX-converted repo id (e.g. "mlx-community/...-4bit") the mlx backend loads instead of
     # hf_model — MLX's fast path wants pre-quantized weights in its own format, not raw vLLM
@@ -47,6 +53,7 @@ class Model:
             "origin": self.origin,
             "size_class": self.size_class,
             "context_length": self.context_length,
+            "vram_fraction": self.vram_fraction,
             "mlx_model": self.mlx_model,
         }
 
@@ -75,6 +82,7 @@ class Catalog:
                 origin=m.get("origin", "unspecified"),
                 size_class=m.get("size_class", "medium"),
                 context_length=m.get("context_length", 0),
+                vram_fraction=m.get("vram_fraction", 0.0),
                 vllm_args=list(m.get("vllm_args", [])),
                 mlx_model=m.get("mlx_model", ""),
             )
@@ -97,6 +105,7 @@ _BUILTIN = r"""
       "origin": "US (Meta)",
       "size_class": "small",
       "context_length": 16384,
+      "vram_fraction": 0.30,
       "vllm_args": ["--max-model-len", "16384"]
     },
     {
@@ -108,6 +117,7 @@ _BUILTIN = r"""
       "origin": "US (Meta)",
       "size_class": "medium",
       "context_length": 16384,
+      "vram_fraction": 0.45,
       "vllm_args": ["--max-model-len", "16384"]
     },
     {
@@ -119,6 +129,7 @@ _BUILTIN = r"""
       "origin": "US (OpenAI)",
       "size_class": "medium",
       "context_length": 32768,
+      "vram_fraction": 0.55,
       "vllm_args": []
     },
     {

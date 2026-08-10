@@ -72,15 +72,88 @@ async def test_streaming_proxy(stack):
     assert "data:" in body and "[DONE]" in body
 
 
-async def test_single_gpu_switch_evicts_oldest(stack):
-    # max_loaded defaults to 1 → loading a second model switches to it
+async def test_default_models_coexist(stack):
+    # max_loaded now defaults to 0 (GPU-bound), so loading a second model NO LONGER evicts the
+    # first — they coexist. On the mock backend there's no GPU inventory to bound them, so both
+    # simply run at once.
     app, ctx = stack
     ctx.supervisor.load("fast")
     await _wait_healthy(ctx, "fast")
     ctx.supervisor.load("balanced")
     await _wait_healthy(ctx, "balanced")
-    assert ctx.supervisor.get("fast") is None
+    assert ctx.supervisor.get("fast").state == "healthy"
     assert ctx.supervisor.get("balanced").state == "healthy"
+
+
+def test_max_loaded_one_restores_switch_semantics(monkeypatch, tmp_path):
+    # SECLLM_MAX_LOADED=1 brings back the old hard ceiling: loading a second model evicts the
+    # oldest (a "switch"). Eviction is synchronous in load(), so no health wait is needed.
+    monkeypatch.setenv("SECLLM_BACKEND", "mock")
+    monkeypatch.setenv("SECLLM_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SECLLM_MAX_LOADED", "1")
+    monkeypatch.setenv("SECLLM_WORKER_PORT_BASE", "12800")
+    from secllm.catalog import Catalog
+    from secllm.config import Config
+    from secllm.supervisor import Supervisor
+
+    cfg = Config.from_env()
+    assert cfg.max_loaded == 1
+    cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    sup = Supervisor(cfg, Catalog.load())
+    try:
+        sup.load("fast")
+        sup.load("balanced")
+        assert sup.get("fast") is None  # evicted
+        assert sup.get("balanced") is not None
+    finally:
+        sup.stop_all()
+
+
+def test_gpu_placement_spreads_across_gpus_and_rejects_when_full(monkeypatch, tmp_path):
+    # Integration through the real load() path with a FAKE 2-GPU inventory injected onto the
+    # supervisor (the mock backend detects no GPUs on its own). Six 0.45-fraction models under a
+    # 0.95 cap: two per card fit (0.45+0.45=0.90) → 4 place across the two GPUs, the 5th 409s.
+    monkeypatch.setenv("SECLLM_BACKEND", "mock")
+    monkeypatch.setenv("SECLLM_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("SECLLM_WORKER_PORT_BASE", "12900")
+    from secllm.catalog import Catalog, Model
+    from secllm.config import Config
+    from secllm.gpu import Gpu
+    from secllm.supervisor import CapacityError, Supervisor
+
+    cfg = Config.from_env()  # max_loaded=0 (GPU-bound), gpu_cap=0.95
+    assert cfg.max_loaded == 0 and cfg.gpu_cap == 0.95
+    cfg.data_dir.mkdir(parents=True, exist_ok=True)
+    catalog = Catalog(models={
+        f"m{i}": Model(id=f"m{i}", name=f"m{i}", description="", hf_model=f"x/m{i}",
+                       origin="US (test)", vram_fraction=0.45)
+        for i in range(6)
+    })
+    sup = Supervisor(cfg, catalog)
+    sup._gpus = [Gpu(0, "L4", 24000, 24000), Gpu(1, "L4", 24000, 24000)]
+    sup._gpu_indices = [0, 1]
+    try:
+        w0 = sup.load("m0")
+        w1 = sup.load("m1")
+        # Spread: the first two workers land on DIFFERENT cards (least-loaded-first).
+        assert w0.gpus and w1.gpus and w0.gpus != w1.gpus
+        assert set(w0.gpus) | set(w1.gpus) == {0, 1}
+        assert w0.memory_fraction == 0.45
+
+        summary = sup.gpu_summary()
+        assert summary["managed"] is True and summary["cap"] == 0.95
+        assert {c["index"] for c in summary["gpus"]} == {0, 1}
+
+        sup.load("m2")  # gpu0 or gpu1 → 0.90
+        sup.load("m3")  # the other card → 0.90; both cards now full for another 0.45
+        assert sum(c["allocated"] for c in sup.gpu_summary()["gpus"]) == 1.80
+
+        import pytest as _pytest
+        with _pytest.raises(CapacityError):
+            sup.load("m4")  # no card can take a 5th 0.45 under the 0.95 cap → 409
+        assert sup.get("m4") is None  # nothing left half-registered after the rejection
+    finally:
+        sup.stop_all()
 
 
 async def test_admin_gating(stack):
@@ -156,3 +229,49 @@ async def test_load_with_context_override_via_admin_api(stack):
         r = await c.post("/admin/api/models/fast/reload", headers=ADMIN,
                          json={"context_length": 2048})
         assert r.status_code == 200 and r.json()["context_length"] == 2048
+
+
+async def test_stats_tracks_api_calls(stack):
+    app, ctx = stack
+    ctx.supervisor.load("fast")
+    await _wait_healthy(ctx, "fast")
+
+    async with _client(app) as c:
+        # A served non-stream call — recorded as a success with token usage from the body.
+        r = await c.post("/v1/chat/completions",
+                         json={"model": "fast", "messages": [{"role": "user", "content": "hi there"}]})
+        assert r.status_code == 200
+
+        # A streaming call — recorded when the stream finishes (no token usage mid-stream).
+        async with c.stream("POST", "/v1/chat/completions",
+                            json={"model": "fast", "stream": True,
+                                  "messages": [{"role": "user", "content": "go"}]}) as s:
+            async for _ in s.aiter_bytes():
+                pass
+
+        # A real-but-not-loaded model — recorded against that model as an error.
+        r = await c.post("/v1/chat/completions", json={"model": "balanced", "messages": []})
+        assert r.status_code == 404
+
+    fast = ctx.stats.for_model("fast")
+    assert fast["requests"] == 2 and fast["errors"] == 0 and fast["last_status"] == 200
+    assert fast["tokens"] > 0 and fast["avg_latency_ms"] is not None
+    balanced = ctx.stats.for_model("balanced")
+    assert balanced["requests"] == 1 and balanced["errors"] == 1 and balanced["last_status"] == 404
+
+    async with _client(app) as c:
+        # Per-model stats ride along on the models list (what the console polls) …
+        r = await c.get("/admin/api/models", headers=ADMIN)
+        row = next(m for m in r.json()["models"] if m["id"] == "fast")
+        assert row["stats"]["requests"] == 2 and row["stats"]["tokens"] > 0
+
+        # … and the dedicated snapshot carries per-model rows + overall totals.
+        r = await c.get("/admin/api/stats", headers=ADMIN)
+        assert r.status_code == 200
+        snap = r.json()
+        assert snap["overall"]["requests"] == 3 and snap["overall"]["errors"] == 1
+        assert snap["by_model"]["fast"]["requests"] == 2
+
+    # The snapshot endpoint is admin-gated like the rest of the control API.
+    async with _client(app) as c:
+        assert (await c.get("/admin/api/stats")).status_code == 401
