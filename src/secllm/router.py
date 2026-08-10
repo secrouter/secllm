@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import time
 
 import httpx
 from fastapi import APIRouter, Request, Response
@@ -19,6 +20,15 @@ from .context import Context
 
 def _error(status: int, message: str, err_type: str = "invalid_request_error") -> JSONResponse:
     return JSONResponse({"error": {"message": message, "type": err_type}}, status_code=status)
+
+
+def _usage(content: bytes) -> tuple[int, int]:
+    """(prompt_tokens, completion_tokens) from an OpenAI response body — best-effort → (0, 0)."""
+    try:
+        u = json.loads(content).get("usage") or {}
+        return int(u.get("prompt_tokens", 0) or 0), int(u.get("completion_tokens", 0) or 0)
+    except (ValueError, AttributeError, TypeError):
+        return 0, 0
 
 
 def build_router(ctx: Context) -> APIRouter:
@@ -54,6 +64,7 @@ def build_router(ctx: Context) -> APIRouter:
     async def _proxy(request: Request, path: str) -> Response:
         if (err := require_api_token(request)) is not None:
             return err
+        t0 = time.monotonic()
         body = await request.body()
         try:
             payload = json.loads(body or b"{}")
@@ -62,26 +73,41 @@ def build_router(ctx: Context) -> APIRouter:
         model_id = payload.get("model")
         if not model_id:
             return _error(400, "missing 'model'")
+
+        def track(status: int, ptoks: int = 0, ctoks: int = 0) -> None:
+            ctx.stats.record(model_id, path, status, (time.monotonic() - t0) * 1000.0, ptoks, ctoks)
+
         worker = ctx.supervisor.get(model_id)
         if not worker:
             if not ctx.catalog.get(model_id):
+                track(404)
                 return _error(404, f"unknown model {model_id!r}", "model_not_found")
+            track(404)
             return _error(404, f"model {model_id!r} is not loaded — load it first", "model_not_loaded")
         if worker.state != "healthy":
+            track(503)
             return _error(503, f"model {model_id!r} is {worker.state}", "model_unavailable")
 
         url = worker.base_url + path
         headers = {"Content-Type": "application/json"}
         if payload.get("stream"):
             async def stream():
-                async with httpx.AsyncClient(timeout=None) as client:
-                    async with client.stream("POST", url, content=body, headers=headers) as resp:
-                        async for chunk in resp.aiter_raw():
-                            yield chunk
+                status = 200
+                try:
+                    async with httpx.AsyncClient(timeout=None) as client:
+                        async with client.stream("POST", url, content=body, headers=headers) as resp:
+                            status = resp.status_code
+                            async for chunk in resp.aiter_raw():
+                                yield chunk
+                finally:
+                    # Recorded when the stream finishes; token usage isn't available mid-stream.
+                    track(status)
             return StreamingResponse(stream(), media_type="text/event-stream")
 
         async with httpx.AsyncClient(timeout=300) as client:
             resp = await client.post(url, content=body, headers=headers)
+        pt, ct = _usage(resp.content)
+        track(resp.status_code, pt, ct)
         return Response(
             content=resp.content,
             status_code=resp.status_code,

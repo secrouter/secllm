@@ -12,9 +12,10 @@ from .catalog import Catalog
 from .config import Config
 from .context import Context
 from .downloads import Downloads
+from .stats import Stats
 from .health import HealthMonitor
 from .router import build_router as build_openai_router
-from .supervisor import Supervisor
+from .supervisor import CapacityError, Supervisor
 
 log = logging.getLogger("secllm")
 
@@ -26,8 +27,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     supervisor = Supervisor(config, catalog)
     health = HealthMonitor(config, supervisor)
     downloads = Downloads()
+    stats = Stats()
     ctx = Context(config=config, catalog=catalog, supervisor=supervisor, health=health,
-                  downloads=downloads)
+                  downloads=downloads, stats=stats)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -37,6 +39,8 @@ def create_app(config: Config | None = None) -> FastAPI:
                 log.info("autostart: loading %s", model_id)
             except KeyError:
                 log.warning("autostart: unknown model %r — skipping", model_id)
+            except CapacityError as exc:
+                log.warning("autostart: no GPU capacity for %r — skipping (%s)", model_id, exc)
         health.start()
         if config.admin_token_generated:
             log.warning(

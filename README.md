@@ -12,14 +12,19 @@ Part of the **SecRouter** suite: SecLLM is the on-prem model backend behind the 
 ## What it does
 
 - **Manages vLLM for you.** Each model runs as a supervised worker; SecLLM starts, stops,
-  and reloads them. On a single GPU, loading a new model **switches** to it.
+  and reloads them. Several models **coexist**, packed across your GPUs by available VRAM
+  (set `SECLLM_MAX_LOADED=1` to instead switch to one model at a time).
 - **Health management.** A monitor probes every worker and **auto-restarts** failures
   (bounded), with a startup grace so slow model loads aren't killed prematurely.
 - **One OpenAI endpoint.** `POST /v1/chat/completions` (+ `/completions`, `/embeddings`,
   `/v1/models`), routed by model name to the loaded worker — streaming supported. A request
   for a model that isn't loaded gets a clear `404`/`503`, never a hang.
 - **A console for humans.** `/admin` — pick a model from the catalog, load/unload/reload,
-  watch health live. No vLLM flags to memorize.
+  **download** weights ahead of time (with live progress), watch health live. No vLLM flags
+  to memorize.
+- **API-call tracking.** Every `/v1` request is counted per model — requests, errors,
+  average latency, and prompt/completion tokens — shown live in the console and served at
+  `GET /admin/api/stats`. In-memory only (resets on restart); no request content is stored.
 - **US-origin catalog by default.** The shipped models are US-origin open weights (Meta,
   OpenAI gpt-oss), matching the suite's supply-chain posture; edit the catalog to add your own.
 
@@ -85,9 +90,11 @@ the shipped defaults, consistent with SecRouter's posture.
 | `SECLLM_HOST` / `SECLLM_PORT` | `0.0.0.0` / `11400` | control-plane bind |
 | `SECLLM_BACKEND` | `vllm` | `vllm` (GPU) or `mock` (dev/CI) |
 | `SECLLM_CATALOG` | built-in | path to a `models.json` |
-| `SECLLM_MAX_LOADED` | `1` | concurrent loaded models (raise for multi-GPU) |
+| `SECLLM_MAX_LOADED` | `0` | fixed cap on loaded models; `0` = GPU-bound coexistence, `>0` = evict-oldest switch (e.g. `1`) |
 | `SECLLM_AUTOSTART` | — | comma-separated model ids to load at boot |
-| `SECLLM_GPU_MEMORY_UTILIZATION` | `0.90` | passed to vLLM |
+| `SECLLM_GPU_MEMORY_UTILIZATION` | `0.90` | per-worker VRAM fraction when a model sets no `vram_fraction` |
+| `SECLLM_GPU_CAP` | `0.95` | max summed VRAM fraction the scheduler packs onto one GPU |
+| `SECLLM_GPUS` | — (auto) | usable GPU indices, e.g. `0,1,2`; empty auto-detects via `nvidia-smi` |
 | `SECLLM_HEALTH_INTERVAL` / `_TIMEOUT` | `10` / `5` | health probe cadence |
 | `SECLLM_STARTUP_GRACE` | `600` | seconds to allow a model to load before failing |
 | `SECLLM_ADMIN_TOKEN` | auto | bearer token for the console/control API |
@@ -101,8 +108,10 @@ the shipped defaults, consistent with SecRouter's posture.
 | `GET /v1/models` | open*† | loaded + healthy models |
 | `GET /admin` | open | management console |
 | `GET /health` | open | control-plane liveness + loaded models |
-| `GET /admin/api/models` | admin | catalog + loaded state |
+| `GET /admin/api/models` | admin | catalog + loaded state + per-model API-call stats |
 | `POST /admin/api/models/{id}/{load,unload,reload}` | admin | lifecycle control |
+| `POST /admin/api/models/{id}/download` | admin | pre-fetch a model's weights without loading it |
+| `GET /admin/api/stats` | admin | per-model + overall API-call counters (requests, errors, latency, tokens) |
 
 \* Put SecLLM behind SecRouter (or a proxy) for authenticated, governed access — it is an
 inference backend, not a public endpoint.

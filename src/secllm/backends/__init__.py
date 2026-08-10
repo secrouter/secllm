@@ -39,13 +39,20 @@ def _vllm_args_with_context(model_args: list[str], context_length: int | None) -
 
 def build_launch_command(
     cfg: Config, model: Model, port: int, context_length: int | None = None,
+    memory_fraction: float | None = None,
 ) -> list[str]:
     """``context_length`` (tokens), when given, overrides the catalog's own context-length
     default for THIS load only — vLLM's ``--max-model-len`` or the mlx backend's own
     ``--max-context`` (see :mod:`secllm.backends.mlx_server`). ``None`` (the default) leaves
     each backend at its catalog-configured default, unchanged from before this override
     existed. The mock backend ignores it entirely — it does no real inference, so a context
-    cap is meaningless there."""
+    cap is meaningless there.
+
+    ``memory_fraction`` (0..1), when given, is the per-GPU VRAM share the co-residency
+    scheduler (see :mod:`secllm.gpu`) picked for this worker — passed to vLLM as
+    ``--gpu-memory-utilization`` so two models on one card don't each grab the global default
+    and OOM it. ``None`` (unmanaged host / no GPU inventory) keeps ``cfg.gpu_memory_utilization``,
+    exactly as before. Only the vLLM path uses it; mlx and mock ignore it."""
     if cfg.backend == "mock":
         return [
             sys.executable, "-m", "secllm.backends.mock_server",
@@ -66,6 +73,6 @@ def build_launch_command(
         "--host", cfg.worker_host,
         "--port", str(port),
         "--served-model-name", model.id,
-        "--gpu-memory-utilization", str(cfg.gpu_memory_utilization),
+        "--gpu-memory-utilization", str(memory_fraction or cfg.gpu_memory_utilization),
     ]
     return cmd + _vllm_args_with_context(model.vllm_args, context_length) + list(cfg.vllm_extra_args)
