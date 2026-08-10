@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from .. import auth
 from ..context import Context
 from ..downloads import is_cached
 from ..supervisor import CapacityError, Worker
@@ -50,10 +51,19 @@ def build_router(ctx: Context) -> APIRouter:
     router = APIRouter()
 
     def require_admin(request: Request) -> None:
+        # SecSSO admin login (resolved by the auth middleware, when SSO is on) — the primary path:
+        # a valid principal that is a member of the admin group (see auth.py).
+        if auth.auth_enabled:
+            principal = auth.current_principal(request)
+            if principal is not None and auth.is_admin(principal):
+                return
+        # Static admin token — always accepted as bootstrap / break-glass, and the ONLY credential
+        # when SSO is off. An OIDC bearer that isn't this token simply won't match here.
         header = request.headers.get("authorization", "")
         token = header[7:].strip() if header[:7].lower() == "bearer " else ""
-        if not token or not secrets.compare_digest(token, ctx.config.admin_token):
-            raise HTTPException(status_code=401, detail="admin token required")
+        if token and secrets.compare_digest(token, ctx.config.admin_token):
+            return
+        raise HTTPException(status_code=401, detail="SecSSO admin login or admin token required")
 
     @router.get("/", include_in_schema=False)
     async def index() -> RedirectResponse:
@@ -71,6 +81,7 @@ def build_router(ctx: Context) -> APIRouter:
             "version": "1.0.0",
             "backend": ctx.config.backend,
             "loaded": [{"id": w.model_id, "state": w.state} for w in ctx.supervisor.list()],
+            "auth": auth.status(),  # admin-plane SSO posture (off by default)
         })
 
     @router.get("/admin/api/models")

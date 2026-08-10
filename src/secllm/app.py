@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from . import auth
 from .admin.api import build_router as build_admin_router
 from .catalog import Catalog
 from .config import Config
@@ -62,4 +63,7 @@ def create_app(config: Config | None = None) -> FastAPI:
     app.state.ctx = ctx
     app.include_router(build_openai_router(ctx))
     app.include_router(build_admin_router(ctx))
+    # Optional SSO for the admin plane (off unless SECLLM_OIDC_* is set) — adds /auth/* + a
+    # principal-resolving middleware. Inference (/v1) is untouched; see auth.py.
+    auth.install(app)
     return app

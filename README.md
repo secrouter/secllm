@@ -97,8 +97,12 @@ the shipped defaults, consistent with SecRouter's posture.
 | `SECLLM_GPUS` | — (auto) | usable GPU indices, e.g. `0,1,2`; empty auto-detects via `nvidia-smi` |
 | `SECLLM_HEALTH_INTERVAL` / `_TIMEOUT` | `10` / `5` | health probe cadence |
 | `SECLLM_STARTUP_GRACE` | `600` | seconds to allow a model to load before failing |
-| `SECLLM_ADMIN_TOKEN` | auto | bearer token for the console/control API |
+| `SECLLM_ADMIN_TOKEN` | auto | bearer token for the console/control API (also the break-glass credential when SSO is on) |
 | `SECLLM_API_TOKEN` | — (open) | bearer token required on `/v1/*` inference routes; unset = open (defense in depth for CUI, e.g. behind SecRouter) |
+| `SECLLM_OIDC_ISSUER` / `_AUDIENCE` | — (off) | turn on **admin-plane SSO** — a SecSSO bearer/login is accepted for `/admin*` (see below) |
+| `SECLLM_OIDC_CLIENT_ID` / `_CLIENT_SECRET` | — | confidential client for the browser (BFF) console login |
+| `SECLLM_PUBLIC_URL` / `SECLLM_SESSION_SECRET` | — | this service's external URL + session-cookie signing secret (BFF login) |
+| `SECLLM_ADMIN_GROUP` | `secllm-admins` | SecSSO group a login must carry to administer SecLLM; blank = any authenticated user |
 
 ## Endpoints
 
@@ -112,9 +116,19 @@ the shipped defaults, consistent with SecRouter's posture.
 | `POST /admin/api/models/{id}/{load,unload,reload}` | admin | lifecycle control |
 | `POST /admin/api/models/{id}/download` | admin | pre-fetch a model's weights without loading it |
 | `GET /admin/api/stats` | admin | per-model + overall API-call counters (requests, errors, latency, tokens) |
+| `GET /auth/login` · `/auth/callback` · `POST /auth/logout` · `GET /auth/status` | open‡ | SecSSO admin login (present only when SSO is configured) |
 
 \* Put SecLLM behind SecRouter (or a proxy) for authenticated, governed access — it is an
 inference backend, not a public endpoint.
+
+‡ **Admin-plane SSO (optional).** Off by default — the console + control API stay gated by
+`SECLLM_ADMIN_TOKEN`, and `/v1` inference keeps its own token (`SECLLM_API_TOKEN`); SecRouter
+already governs *client* access to inference, so only the admin plane needs SSO. Set
+`SECLLM_OIDC_ISSUER` + `SECLLM_OIDC_AUDIENCE` and the console accepts a SecSSO **login** (browser,
+PKCE, httpOnly session cookie — add the client id/secret + `SECLLM_PUBLIC_URL` +
+`SECLLM_SESSION_SECRET`) or a **bearer JWT** (CLI/scripts, verified against SecSSO's JWKS). Either
+must also be a member of `SECLLM_ADMIN_GROUP` (default `secllm-admins`). The static
+`SECLLM_ADMIN_TOKEN` is always still accepted as a bootstrap / break-glass credential.
 
 † Set `SECLLM_API_TOKEN` to require `Authorization: Bearer <token>` on all `/v1/*` routes
 instead (defense in depth on top of network isolation — useful when serving CUI). `GET /health`

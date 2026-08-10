@@ -15,6 +15,9 @@ dependencies = [
     # button (downloads.py) needs to check/trigger HF Hub caching regardless of which
     # inference backend is actually installed.
     "huggingface_hub>=0.24",
+    # Optional SSO for the admin plane (auth.py) — SecSSO/OIDC bearer + BFF login. The same OIDC
+    # library the rest of the suite's Python services use; [crypto] pulls in RS256/JWKS support.
+    "pyjwt[crypto]>=2.9",
 ]
 
 [project.optional-dependencies]

@@ -57,6 +57,9 @@ CONSOLE_HTML = r"""<!doctype html>
 <main>
   <section class="card">
     <div class="row">
+      <span id="who" class="hint"></span>
+      <button id="signin" style="display:none">Sign in with SecSSO</button>
+      <button id="signout" class="ghost" style="display:none">Sign out</button>
       <input id="token" type="password" placeholder="admin token (SECLLM_ADMIN_TOKEN)" />
       <button id="connect">Connect</button>
       <span id="info" class="hint"></span>
@@ -65,19 +68,37 @@ CONSOLE_HTML = r"""<!doctype html>
   </section>
   <section class="card">
     <h2 style="margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--dim)">Models</h2>
-    <div id="models"><div class="hint">connect with an admin token to manage models</div></div>
+    <div id="models"><div class="hint">sign in with SecSSO, or connect with an admin token, to manage models</div></div>
   </section>
 </main>
 <script>
 const $=(id)=>document.getElementById(id);
 let token=localStorage.getItem("secllm_token")||""; $("token").value=token;
+let signedIn=false; // true once an SSO session cookie is active (no admin token needed then)
 function pill(s,t){const p=$("pill");p.className="pill "+s;p.textContent=t;}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
 function fmtBytes(n){n=Number(n)||0;const u=["B","KB","MB","GB","TB"];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return (i===0?String(n):n.toFixed(1))+u[i];}
-async function api(path,opts={}){opts.headers=Object.assign({},opts.headers,token?{Authorization:"Bearer "+token}:{});const r=await fetch(path,opts);if(!r.ok)throw new Error(path+" → "+r.status);return r.json();}
+// credentials:same-origin sends the SSO session cookie (when signed in); the admin token header is
+// added only when a token is present (break-glass / bearer-only / SSO-off). Either satisfies require_admin.
+async function api(path,opts={}){opts.credentials="same-origin";opts.headers=Object.assign({},opts.headers,token?{Authorization:"Bearer "+token}:{});const r=await fetch(path,opts);if(!r.ok)throw new Error(path+" → "+r.status);return r.json();}
+async function loadAuth(){try{applyAuth(await fetch("/auth/status",{credentials:"same-origin"}).then(r=>r.json()));}catch(e){}}
+function applyAuth(a){
+  signedIn=!!(a&&a.user);
+  const admin=signedIn&&a.user.admin;
+  // Sign-in button only when the browser (BFF) login is available and we're not already signed in.
+  $("signin").style.display=(a&&a.sso&&!signedIn)?"":"none";
+  $("signout").style.display=signedIn?"":"none";
+  // Hide the manual admin-token box once a session is active — the cookie authorizes the API.
+  $("token").style.display=signedIn?"none":"";
+  $("connect").style.display=signedIn?"none":"";
+  $("who").textContent=signedIn
+    ?("signed in as "+(a.user.name||a.user.sub)+(admin?"":" — not a member of "+(a.admin_group||"the admin group")))
+    :"";
+  if(signedIn)refresh();
+}
 async function loadHealth(){try{const h=await fetch("/health").then(r=>r.json());pill("ok","healthy · "+h.backend);}catch(e){pill("bad","unreachable");}}
 async function refresh(){
-  if(!token)return;
+  if(!token&&!signedIn)return;
   // Preserve whatever the operator has typed but not yet submitted — refresh runs every 4s
   // (see setInterval below), and a freshly-rebuilt <input> would otherwise wipe it mid-edit.
   const typed={};
@@ -155,8 +176,10 @@ async function act(id,verb){
   catch(e){alert(verb+" failed: "+e.message);}
 }
 $("connect").onclick=()=>{token=$("token").value.trim();localStorage.setItem("secllm_token",token);refresh();};
+$("signin").onclick=()=>{location.href="/auth/login?next=/admin";};
+$("signout").onclick=()=>{fetch("/auth/logout",{method:"POST",credentials:"same-origin"}).then(()=>location.reload());};
 window.act=act;
-loadHealth();refresh();
+loadAuth();loadHealth();refresh();
 setInterval(()=>{loadHealth();refresh();},4000);
 </script>
 </body>
