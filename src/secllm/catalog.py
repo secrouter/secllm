@@ -110,15 +110,14 @@ _BUILTIN = r"""
     },
     {
       "id": "balanced",
-      "name": "Balanced — Llama 3.1 8B",
-      "description": "General-purpose 8B; solid quality at moderate GPU cost.",
-      "hf_model": "meta-llama/Llama-3.1-8B-Instruct",
-      "mlx_model": "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
-      "origin": "US (Meta)",
+      "name": "Balanced — Gemma 4 12B",
+      "description": "Google's mid-size dense model; long context and strong general/coding quality at a moderate footprint — the everyday default between `fast` and the big models.",
+      "hf_model": "google/gemma-4-12B-it",
+      "mlx_model": "mlx-community/gemma-4-12B-it-4bit",
+      "origin": "US (Google)",
       "size_class": "medium",
-      "context_length": 16384,
-      "vram_fraction": 0.45,
-      "vllm_args": ["--max-model-len", "16384"]
+      "context_length": 131072,
+      "vllm_args": ["--max-model-len", "32768"]
     },
     {
       "id": "reasoning",
