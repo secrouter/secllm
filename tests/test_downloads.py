@@ -125,6 +125,30 @@ def test_status_view_computes_percent_from_blobs(monkeypatch, tmp_path):
     assert view["percent"] == 25.0
 
 
+def test_status_view_dedupes_finalized_and_incomplete_blobs(monkeypatch, tmp_path):
+    """Regression (>100% bug): a blob can sit on disk as its finalized file AND leftover
+    ``<hash>.<uuid>.incomplete`` partials from retried attempts, and a still-downloading blob can
+    have several partials at once. Summing all of them double-counts and pushes percent past 100.
+    Each blob must count once — the finalized file if present, else its largest partial."""
+    monkeypatch.setattr(dl, "HF_HUB_CACHE", str(tmp_path))
+    d = dl.Downloads()
+    d._states["fast"] = dl.DownloadState(status="downloading", total_bytes=1000)
+    blobs = tmp_path / "models--x--y" / "blobs"
+    blobs.mkdir(parents=True)
+    # finalized 600B blob + two stale partials for the SAME hash (must be ignored).
+    (blobs / "aaaa").write_bytes(b"x" * 600)
+    (blobs / "aaaa.11111111.incomplete").write_bytes(b"x" * 500)
+    (blobs / "aaaa.22222222.incomplete").write_bytes(b"x" * 100)
+    # in-progress blob: only partials (two retry attempts) → count the largest (350).
+    (blobs / "bbbb.33333333.incomplete").write_bytes(b"x" * 200)
+    (blobs / "bbbb.44444444.incomplete").write_bytes(b"x" * 350)
+    (blobs / "cccc").write_bytes(b"x" * 50)  # a small finalized blob
+    view = d.status_view("fast", "x/y")
+    # deduped: 600 (aaaa) + 350 (largest bbbb partial) + 50 (cccc) = 1000, NOT the naive 1800.
+    assert view["downloaded_bytes"] == 1000
+    assert view["percent"] == 100.0  # never > 100
+
+
 def test_status_view_percent_none_when_total_unknown(monkeypatch, tmp_path):
     # Total not yet known (HF lookup pending/failed) → percent is None even though bytes are on
     # disk, rather than a divide-by-zero or a bogus 0%.
