@@ -38,11 +38,12 @@ class Model:
 
     def repo_id(self, backend: str) -> str:
         """The actual Hugging Face repo id ``backend`` loads — ``mlx_model`` (falling back to
-        ``hf_model`` if unset) for the ``mlx`` backend, ``hf_model`` for everything else. Single
-        source of truth for this fallback — :func:`backends.build_launch_command` and the
-        download-cache check (:mod:`secllm.downloads`) both need the EXACT same resolution,
-        or a model could show as "cached" for one and not the other."""
-        return (self.mlx_model or self.hf_model) if backend == "mlx" else self.hf_model
+        ``hf_model`` if unset) for the MLX-weight backends (``mlx`` and ``metal`` — vLLM-Metal
+        loads the same pre-quantized MLX repos), ``hf_model`` for everything else. Single source
+        of truth for this fallback — :func:`backends.build_launch_command` and the download-cache
+        check (:mod:`secllm.downloads`) both need the EXACT same resolution, or a model could
+        show as "cached" for one and not the other."""
+        return (self.mlx_model or self.hf_model) if backend in ("mlx", "metal") else self.hf_model
 
     def to_dict(self) -> dict[str, Any]:
         return {

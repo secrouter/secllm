@@ -6,12 +6,16 @@ endpoint, so the supervisor, health monitor, and router treat them identically:
 * ``vllm``  — ``vllm serve <hf_model> …`` (GPU/Linux; the real inference engine).
 * ``mlx``   — a tiny stdlib server (:mod:`secllm.backends.mlx_server`) using Apple's ``mlx-lm``;
   the real inference engine on Apple Silicon (macOS-only optional dependency, see pyproject.toml).
+* ``metal`` — vLLM's OWN OpenAI server (``vllm serve``) run from a separate Apple-Silicon venv
+  with the vllm-metal plugin (``SECLLM_METAL_VENV``). Full vLLM engine on Metal — supports model
+  architectures mlx-lm lacks (e.g. Gemma-4 unified). Loads the same MLX-format quants as ``mlx``.
 * ``mock``  — a tiny stdlib server (:mod:`secllm.backends.mock_server`) for GPU-free dev/test.
 """
 
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from ..catalog import Model
 from ..config import Config
@@ -67,6 +71,20 @@ def build_launch_command(
         if context_length is not None:
             cmd += ["--max-context", str(context_length)]
         return cmd
+    if cfg.backend == "metal":
+        # vLLM's own OpenAI server, run from the external vllm-metal venv (separate 3.12
+        # interpreter — can't be imported here). Loads the same MLX quant as the mlx backend
+        # (repo_id("metal")); --served-model-name exposes the friendly catalog id. --enforce-eager
+        # skips torch.compile/CUDAGraph setup (no Triton on Metal — vLLM falls back anyway).
+        vllm_bin = str(Path(cfg.metal_venv).expanduser() / "bin" / "vllm")
+        return [
+            vllm_bin, "serve", model.repo_id("metal"),
+            "--host", cfg.worker_host,
+            "--port", str(port),
+            "--served-model-name", model.id,
+            "--max-model-len", str(context_length or cfg.metal_max_model_len),
+            "--enforce-eager",
+        ]
     # vLLM: expose the friendly catalog id as the served model name.
     cmd = [
         "vllm", "serve", model.hf_model,

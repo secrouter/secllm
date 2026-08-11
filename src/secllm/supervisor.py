@@ -124,9 +124,16 @@ class Supervisor:
                                    memory_fraction=fraction)
         log = open(self._logdir / f"{model_id}.log", "ab", buffering=0)  # noqa: SIM115
         # Pin the child to its assigned card(s). Unmanaged (no inventory) → env=None, i.e. the
-        # child inherits the parent's environment untouched, exactly as before.
-        env = ({**os.environ, "CUDA_VISIBLE_DEVICES": ",".join(map(str, gpus))}
-               if gpus else None)
+        # child inherits the parent's environment untouched, exactly as before — EXCEPT the metal
+        # backend, whose child is an EXTERNAL venv's `vllm`: drop this interpreter's venv vars so
+        # its Python resolves its own site-packages, not secllm's (which would shadow/break vLLM).
+        if gpus:
+            env = {**os.environ, "CUDA_VISIBLE_DEVICES": ",".join(map(str, gpus))}
+        elif self.cfg.backend == "metal":
+            env = {k: v for k, v in os.environ.items()
+                   if k not in ("VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME")}
+        else:
+            env = None
         proc = subprocess.Popen(  # noqa: S603
             cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(self.cfg.data_dir), env=env
         )
