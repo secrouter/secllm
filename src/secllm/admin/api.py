@@ -104,6 +104,10 @@ def build_router(ctx: Context) -> APIRouter:
                 "download_downloaded_bytes": download["downloaded_bytes"],
                 "download_total_bytes": download["total_bytes"],
                 "download_percent": download["percent"],
+                # Live transfer rate + time-remaining while a download is in flight (both null
+                # otherwise) — see downloads.status_view / Downloads._speed.
+                "download_speed_bps": download["speed_bps"],
+                "download_eta_seconds": download["eta_seconds"],
                 # API-call tracking: this model's request/error/latency/token counters.
                 "stats": ctx.stats.for_model(model.id),
             }
