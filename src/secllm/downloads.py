@@ -80,6 +80,10 @@ class Downloads:
 
     def __init__(self) -> None:
         self._states: dict[str, DownloadState] = {}
+        # Last (timestamp, downloaded_bytes) reading per model, taken on the previous
+        # status_view poll — lets us report a LIVE transfer rate over the inter-poll interval
+        # rather than only the average since start. Guarded by _lock alongside _states.
+        self._samples: dict[str, tuple[float, int]] = {}
         self._lock = threading.Lock()
 
     def status(self, model_id: str) -> DownloadState:
@@ -94,12 +98,19 @@ class Downloads:
         Cheap for idle models (no disk walk) — only an in-flight one scans the blobs dir."""
         state = self.status(model_id)
         total = state.total_bytes
+        speed_bps: float | None = None  # bytes/sec; only meaningful while downloading
+        eta_seconds: float | None = None
         if state.status == "downloading":
             downloaded = _cache_blobs_bytes(repo_id)
             percent = round(100 * downloaded / total, 1) if total else None
+            speed_bps = self._speed(model_id, downloaded, state.started_at)
+            if speed_bps and total:
+                eta_seconds = round(max(0, total - downloaded) / speed_bps, 1)
         elif state.status == "complete":
             downloaded = total
             percent = 100.0
+            with self._lock:
+                self._samples.pop(model_id, None)  # done — drop the rolling sample
         else:  # idle | error — nothing meaningful in flight
             downloaded = 0
             percent = None
@@ -109,7 +120,25 @@ class Downloads:
             "downloaded_bytes": downloaded,
             "total_bytes": total,
             "percent": percent,
+            "speed_bps": speed_bps,
+            "eta_seconds": eta_seconds,
         }
+
+    def _speed(self, model_id: str, downloaded: int, started_at: float) -> float | None:
+        """Live transfer rate (bytes/sec): bytes gained since the previous status_view poll over
+        the elapsed interval. Falls back to the average since ``started_at`` when there's no prior
+        sample yet or the interval is too short to be meaningful (< 0.5s). ``None`` until at least
+        some bytes have landed. Stores this poll's reading for the next call."""
+        now = time.time()
+        with self._lock:
+            prev = self._samples.get(model_id)
+            self._samples[model_id] = (now, downloaded)
+        if prev is not None:
+            dt, db = now - prev[0], downloaded - prev[1]
+            if dt >= 0.5 and db >= 0:
+                return db / dt
+        elapsed = now - started_at if started_at else 0
+        return downloaded / elapsed if elapsed > 0 and downloaded > 0 else None
 
     def start(self, model_id: str, repo_id: str) -> DownloadState:
         """Kick off a download for ``model_id`` (backed by ``repo_id``) if one isn't already

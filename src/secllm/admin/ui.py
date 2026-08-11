@@ -78,6 +78,7 @@ let signedIn=false; // true once an SSO session cookie is active (no admin token
 function pill(s,t){const p=$("pill");p.className="pill "+s;p.textContent=t;}
 function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
 function fmtBytes(n){n=Number(n)||0;const u=["B","KB","MB","GB","TB"];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return (i===0?String(n):n.toFixed(1))+u[i];}
+function fmtEta(s){s=Math.round(Number(s)||0);if(s<=0)return"";const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=s%60;if(h)return h+"h "+m+"m";if(m)return m+"m "+sec+"s";return sec+"s";}
 // credentials:same-origin sends the SSO session cookie (when signed in); the admin token header is
 // added only when a token is present (break-glass / bearer-only / SSO-off). Either satisfies require_admin.
 async function api(path,opts={}){opts.credentials="same-origin";opts.headers=Object.assign({},opts.headers,token?{Authorization:"Bearer "+token}:{});const r=await fetch(path,opts);if(!r.ok)throw new Error(path+" → "+r.status);return r.json();}
@@ -139,7 +140,11 @@ async function refresh(){
         const known=m.download_percent!=null;
         const pct=known?m.download_percent:100;
         const tip=m.download_total_bytes?`${fmtBytes(m.download_downloaded_bytes)} / ${fmtBytes(m.download_total_bytes)}`:"total size unknown";
-        progress=`<span class="progress${known?"":" indeterminate"}" title="${tip}"><span class="bar" style="width:${pct}%"></span></span><span class="pct">${known?pct+"%":"…"}</span>`;
+        // Live rate + time-remaining alongside the bar (both null until some bytes land; ETA also
+        // needs the total size). e.g. "42.1% · 118.3MB/s · 2m 4s left".
+        const rate=m.download_speed_bps?` · ${fmtBytes(m.download_speed_bps)}/s`:"";
+        const eta=m.download_eta_seconds?` · ${fmtEta(m.download_eta_seconds)} left`:"";
+        progress=`<span class="progress${known?"":" indeterminate"}" title="${tip}"><span class="bar" style="width:${pct}%"></span></span><span class="pct">${known?pct+"%":"…"}${rate}${eta}</span>`;
       }
       const downloadBtn=(!m.cached && !m.loaded)
         ? `<button class="ghost" onclick="act('${m.id}','download')" ${downloading?"disabled":""}>${downloading?"Downloading…":"Download"}</button>`
