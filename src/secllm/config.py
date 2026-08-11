@@ -7,7 +7,7 @@ import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 
-BACKENDS = {"vllm", "mock", "mlx"}
+BACKENDS = {"vllm", "mock", "mlx", "metal"}
 
 
 def _env(name: str, default: str) -> str:
@@ -49,7 +49,7 @@ class Config:
     api_token: str  # bearer token required on /v1/* when non-empty; "" = open (default)
     data_dir: Path
     catalog_path: str  # path to a models.json, or "" for the built-in catalog
-    backend: str  # "vllm" | "mock" | "mlx"
+    backend: str  # "vllm" | "mock" | "mlx" | "metal"
     worker_host: str
     worker_port_base: int
     # Fixed cap on concurrently loaded models. 0 (the default) = no fixed cap: models coexist,
@@ -69,6 +69,13 @@ class Config:
     # Explicit GPU indices the scheduler may use (SECLLM_GPUS="0,1,2"). [] = auto-detect every
     # GPU nvidia-smi reports (see gpu.detect_gpus); ignored entirely on a mock/CPU host.
     gpu_devices: list[int] = field(default_factory=list)
+    # vLLM-Metal backend (SECLLM_BACKEND=metal): the external Apple-Silicon venv (native arm64
+    # Python 3.12) with vLLM + the vllm-metal plugin installed — it can't share secllm's
+    # interpreter, so build_launch_command runs "<metal_venv>/bin/vllm serve" from it. Loads the
+    # same MLX-format quants as the mlx backend (see catalog.Model.repo_id). Only used when
+    # backend == "metal".
+    metal_venv: str = "~/.venv-vllm-metal"
+    metal_max_model_len: int = 8192  # default --max-model-len for metal workers (bounds KV cache)
 
     @staticmethod
     def from_env() -> "Config":
@@ -102,4 +109,6 @@ class Config:
             vllm_extra_args=[s for s in _env("SECLLM_VLLM_ARGS", "").split() if s],
             gpu_cap=_float("SECLLM_GPU_CAP", 0.95),
             gpu_devices=_int_list("SECLLM_GPUS"),
+            metal_venv=_env("SECLLM_METAL_VENV", "~/.venv-vllm-metal"),
+            metal_max_model_len=_int("SECLLM_METAL_MAX_MODEL_LEN", 8192),
         )

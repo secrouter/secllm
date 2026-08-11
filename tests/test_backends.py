@@ -4,6 +4,8 @@ real-mock-subprocess flow)."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from secllm.backends import _vllm_args_with_context, build_launch_command
 from secllm.catalog import Model
 from secllm.config import Config
@@ -85,3 +87,23 @@ def test_build_launch_command_vllm_memory_fraction_overrides_utilization():
 def test_build_launch_command_mlx_ignores_memory_fraction():
     cmd = build_launch_command(_cfg("mlx"), _model(), port=12000, memory_fraction=0.45)
     assert "--gpu-memory-utilization" not in cmd and "0.45" not in cmd
+
+
+def test_build_launch_command_metal_serves_mlx_repo_from_external_venv():
+    # metal runs `vllm serve` from the external vllm-metal venv, loading the MLX quant
+    # (repo_id("metal")) and exposing the friendly catalog id as the served model name.
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
+    cmd = build_launch_command(cfg, _model(), port=12000)
+    assert cmd[:2] == ["/opt/vm/bin/vllm", "serve"]
+    assert cmd[2] == "mlx-community/gpt-oss-20b-mlx-q8"  # the MLX quant, not hf_model
+    assert cmd[cmd.index("--served-model-name") + 1] == "reasoning"
+    assert cmd[cmd.index("--max-model-len") + 1] == "8192"  # cfg.metal_max_model_len default
+    assert "--enforce-eager" in cmd
+    assert "--gpu-memory-utilization" not in cmd  # no GPU knobs on Metal
+
+
+def test_build_launch_command_metal_context_override_replaces_max_model_len():
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
+    cmd = build_launch_command(cfg, _model(), port=12000, context_length=4096)
+    assert cmd[cmd.index("--max-model-len") + 1] == "4096"
+    assert cmd.count("--max-model-len") == 1  # overridden, not duplicated
