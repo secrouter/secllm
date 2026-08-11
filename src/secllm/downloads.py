@@ -46,23 +46,35 @@ def _repo_total_bytes(repo_id: str) -> int:
 
 
 def _cache_blobs_bytes(repo_id: str) -> int:
-    """Bytes currently on disk for ``repo_id`` — the size of its cache *blobs* directory
-    (``<HF cache>/models--<org>--<name>/blobs/``), where the Hub writes the real file content
-    (the snapshots dir is just symlinks into it). Summed following symlinks, so an in-progress
-    download's partial ``.incomplete`` blobs count toward the live numerator. 0 when nothing's
-    been fetched yet. ``HF_HUB_CACHE`` is read at call time so a test can repoint the cache."""
+    """Bytes currently on disk for ``repo_id`` — the content of its cache *blobs* directory
+    (``<HF cache>/models--<org>--<name>/blobs/``), where the Hub writes real file content (the
+    snapshots dir is just symlinks into it). 0 when nothing's been fetched yet. ``HF_HUB_CACHE``
+    is read at call time so a test can repoint the cache.
+
+    Counts each blob AT MOST ONCE. A single blob can appear on disk as the finalized file
+    (``<hash>``) and/or one-or-more partial ``<hash>.<uuid>.incomplete`` files left by
+    interrupted/retried attempts — naively summing them all double-counts and can push the live
+    progress numerator PAST the repo's real size (the >100% bug). So collapse by blob hash: the
+    finalized file if present, else the largest partial (the furthest-along attempt)."""
     folder = "models--" + repo_id.replace("/", "--")
     blobs = Path(HF_HUB_CACHE) / folder / "blobs"
     if not blobs.is_dir():
         return 0
-    total = 0
-    for f in blobs.rglob("*"):
+    finalized: dict[str, int] = {}      # blob hash -> size of the completed blob
+    partials: dict[str, int] = {}       # blob hash -> largest partial seen for it
+    for f in blobs.iterdir():           # blobs/ is flat — no recursion needed
         try:
-            if f.is_file():  # follows symlinks; skips dir entries
-                total += f.stat().st_size
+            if not f.is_file():
+                continue
+            size = f.stat().st_size
         except OSError:
             continue
-    return total
+        if f.name.endswith(".incomplete"):
+            h = f.name.split(".", 1)[0]
+            partials[h] = max(partials.get(h, 0), size)
+        else:
+            finalized[f.name] = size
+    return sum(finalized.values()) + sum(s for h, s in partials.items() if h not in finalized)
 
 
 @dataclass
@@ -102,7 +114,9 @@ class Downloads:
         eta_seconds: float | None = None
         if state.status == "downloading":
             downloaded = _cache_blobs_bytes(repo_id)
-            percent = round(100 * downloaded / total, 1) if total else None
+            # min(100): the numerator is a live disk measure and the denominator a metadata
+            # lookup — never let rounding or a slight metadata undercount render as >100%.
+            percent = min(100.0, round(100 * downloaded / total, 1)) if total else None
             speed_bps = self._speed(model_id, downloaded, state.started_at)
             if speed_bps and total:
                 eta_seconds = round(max(0, total - downloaded) / speed_bps, 1)
