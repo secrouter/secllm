@@ -76,10 +76,11 @@ class Config:
     # backend == "metal".
     metal_venv: str = "~/.venv-vllm-metal"
     metal_max_model_len: int = 8192  # default --max-model-len for metal workers (bounds KV cache)
-    # Fraction of unified memory EACH metal worker may reserve (vLLM --gpu-memory-utilization).
-    # vLLM pre-allocates its KV cache to this fraction at load, so the default 0.9 makes a SINGLE
-    # worker grab ~90% of RAM — two co-resident models then OOM/swap the machine. 0.4 lets ~2
-    # models coexist on unified memory (SECLLM_MAX_LOADED=0); lower it further for 3+.
+    # FALLBACK fraction of unified memory a metal worker may reserve (vLLM --gpu-memory-utilization)
+    # when its catalog entry sets no per-model ``vram_fraction``. vLLM pre-allocates its KV cache to
+    # this fraction at load, so vLLM's own default 0.9 would make a SINGLE worker grab ~90% of RAM —
+    # two co-resident models then OOM/swap the machine. Prefer per-model ``vram_fraction`` (a 3B
+    # needs far less than a 26B); this 0.4 default just keeps an unsized model from over-reserving.
     metal_mem_util: float = 0.4
 
     @staticmethod

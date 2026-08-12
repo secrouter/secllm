@@ -84,9 +84,12 @@ def build_launch_command(
             "--served-model-name", model.id,
             "--max-model-len", str(context_length or cfg.metal_max_model_len),
             # Cap each worker's unified-memory reservation (vLLM pre-allocates its KV cache to this
-            # fraction) so co-resident models don't each grab ~90% and OOM the machine — see
-            # Config.metal_mem_util.
-            "--gpu-memory-utilization", str(memory_fraction or cfg.metal_mem_util),
+            # fraction) so co-resident models don't each grab ~90% and OOM the machine. Per-model:
+            # the catalog's own ``vram_fraction`` (right-sized for the model — a 3B needs far less
+            # than a 26B), falling back to the global Config.metal_mem_util when a model leaves it
+            # unset. ``memory_fraction`` (a scheduler-supplied override) wins if ever passed.
+            "--gpu-memory-utilization",
+            str(memory_fraction or model.vram_fraction or cfg.metal_mem_util),
             "--enforce-eager",
         ]
     # vLLM: expose the friendly catalog id as the served model name.
