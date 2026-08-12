@@ -152,12 +152,15 @@ async function refresh(){
       const st=m.stats||{};
       const tok=st.tokens>=1000?(st.tokens/1000).toFixed(1)+"k":st.tokens;
       const statsLine=st.requests?`<div class="meta">calls: ${st.requests}${st.errors?` · <span style="color:var(--bad)">${st.errors} err</span>`:""}${st.avg_latency_ms!=null?` · ${Math.round(st.avg_latency_ms)}ms avg`:""}${st.tokens?` · ${tok} tok`:""}</div>`:"";
+      const toolTag=m.tool_call_parser?`<span class="badge healthy" title="server-side tool/function calling is ON for this model (vLLM --tool-call-parser=${esc(m.tool_call_parser)})">tools: ${esc(m.tool_call_parser)}</span>`:`<span class="badge" title="tool/function calling is not configured for this model — the coding agent can't call tools against it">tools: off</span>`;
+      const memTag=m.vram_fraction?`<span class="badge" title="unified-memory reservation per worker on the metal backend (vLLM --gpu-memory-utilization)">mem ${Math.round(m.vram_fraction*100)}%</span>`:"";
       let actions;
       if(!m.loaded) actions=`${downloadBtn}${progress}${ctxInput}<button onclick="act('${m.id}','load')">Load</button>`;
       else actions=`${ctxInput}<button class="ghost" onclick="act('${m.id}','reload')">Reload</button><button class="danger" onclick="act('${m.id}','unload')">Unload</button>`;
       return `<div class="model"><div>
         <h3>${esc(m.name)} ${badge}${up}${ctxActive}${gpuTag}</h3>
         <div class="meta"><span class="origin">${esc(m.origin)}</span> · ${esc(m.size_class)} · <code>${esc(m.id)}</code> · ${esc(m.hf_model)} · context: ${ctxDefault} · ${cacheBadge}</div>
+        <div class="meta">config: ${toolTag} ${memTag}</div>
         <div class="desc">${esc(m.description)}</div>${err}${statsLine}
       </div><div class="actions">${actions}</div></div>`;
     }).join("");

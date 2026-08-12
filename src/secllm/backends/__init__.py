@@ -41,6 +41,16 @@ def _vllm_args_with_context(model_args: list[str], context_length: int | None) -
     return args + ["--max-model-len", str(context_length)]
 
 
+def _tool_call_args(model: Model) -> list[str]:
+    """vLLM flags to turn on server-side tool/function calling for ``model`` — BOTH
+    ``--enable-auto-tool-choice`` and its model-specific ``--tool-call-parser`` (vLLM rejects a
+    tool request with a 400 unless both are set). Empty when the catalog gives the model no
+    ``tool_call_parser`` (tool calling stays off). Shared by the vllm and metal backends."""
+    if not model.tool_call_parser:
+        return []
+    return ["--enable-auto-tool-choice", "--tool-call-parser", model.tool_call_parser]
+
+
 def build_launch_command(
     cfg: Config, model: Model, port: int, context_length: int | None = None,
     memory_fraction: float | None = None,
@@ -77,7 +87,7 @@ def build_launch_command(
         # (repo_id("metal")); --served-model-name exposes the friendly catalog id. --enforce-eager
         # skips torch.compile/CUDAGraph setup (no Triton on Metal — vLLM falls back anyway).
         vllm_bin = str(Path(cfg.metal_venv).expanduser() / "bin" / "vllm")
-        return [
+        cmd = [
             vllm_bin, "serve", model.repo_id("metal"),
             "--host", cfg.worker_host,
             "--port", str(port),
@@ -92,6 +102,7 @@ def build_launch_command(
             str(memory_fraction or model.vram_fraction or cfg.metal_mem_util),
             "--enforce-eager",
         ]
+        return cmd + _tool_call_args(model)
     # vLLM: expose the friendly catalog id as the served model name.
     cmd = [
         "vllm", "serve", model.hf_model,
@@ -100,4 +111,5 @@ def build_launch_command(
         "--served-model-name", model.id,
         "--gpu-memory-utilization", str(memory_fraction or cfg.gpu_memory_utilization),
     ]
-    return cmd + _vllm_args_with_context(model.vllm_args, context_length) + list(cfg.vllm_extra_args)
+    return (cmd + _vllm_args_with_context(model.vllm_args, context_length)
+            + _tool_call_args(model) + list(cfg.vllm_extra_args))

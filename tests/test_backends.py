@@ -119,3 +119,19 @@ def test_build_launch_command_metal_uses_per_model_vram_fraction():
     # unset (0.0) → fallback to the global default
     cmd2 = build_launch_command(cfg, _model(vram_fraction=0.0), port=12000)
     assert cmd2[cmd2.index("--gpu-memory-utilization") + 1] == "0.4"
+
+
+def test_build_launch_command_metal_tool_call_parser_enables_tools():
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
+    cmd = build_launch_command(cfg, _model(tool_call_parser="gemma4"), port=12000)
+    assert "--enable-auto-tool-choice" in cmd  # both flags required or vLLM 400s tool requests
+    assert cmd[cmd.index("--tool-call-parser") + 1] == "gemma4"
+    # no parser → tool calling stays off (no flags)
+    off = build_launch_command(cfg, _model(tool_call_parser=""), port=12000)
+    assert "--enable-auto-tool-choice" not in off and "--tool-call-parser" not in off
+
+
+def test_build_launch_command_vllm_tool_call_parser_enables_tools():
+    cmd = build_launch_command(_cfg("vllm"), _model(tool_call_parser="llama3_json"), port=12000)
+    assert "--enable-auto-tool-choice" in cmd
+    assert cmd[cmd.index("--tool-call-parser") + 1] == "llama3_json"
