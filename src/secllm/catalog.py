@@ -35,6 +35,13 @@ class Model:
     # safetensors (see backends/mlx_server.py). Empty (the default) falls back to hf_model, which
     # only works if that repo happens to already be MLX-format.
     mlx_model: str = ""
+    # vLLM's tool-call parser for this model (its `--tool-call-parser`), enabling server-side
+    # function/tool calling on the vllm + metal backends: without it vLLM rejects tool requests
+    # (400 "auto tool choice requires --enable-auto-tool-choice and --tool-call-parser") and the
+    # model emits tool-call JSON as plain text instead of real tool_calls. Model-specific —
+    # `llama3_json` for Llama 3.x, `gemma4` for Gemma 4, etc. (see `vllm serve --tool-call-parser`
+    # choices). Empty (the default) = tool calling stays off for this model.
+    tool_call_parser: str = ""
 
     def repo_id(self, backend: str) -> str:
         """The actual Hugging Face repo id ``backend`` loads — ``mlx_model`` (falling back to
@@ -56,6 +63,7 @@ class Model:
             "context_length": self.context_length,
             "vram_fraction": self.vram_fraction,
             "mlx_model": self.mlx_model,
+            "tool_call_parser": self.tool_call_parser,
         }
 
 
@@ -86,6 +94,7 @@ class Catalog:
                 vram_fraction=m.get("vram_fraction", 0.0),
                 vllm_args=list(m.get("vllm_args", [])),
                 mlx_model=m.get("mlx_model", ""),
+                tool_call_parser=m.get("tool_call_parser", ""),
             )
         return Catalog(models=models)
 
@@ -107,7 +116,8 @@ _BUILTIN = r"""
       "size_class": "small",
       "context_length": 16384,
       "vram_fraction": 0.15,
-      "vllm_args": ["--max-model-len", "16384"]
+      "vllm_args": ["--max-model-len", "16384"],
+      "tool_call_parser": "llama3_json"
     },
     {
       "id": "balanced",
@@ -119,7 +129,8 @@ _BUILTIN = r"""
       "size_class": "medium",
       "context_length": 262144,
       "vram_fraction": 0.35,
-      "vllm_args": ["--max-model-len", "32768"]
+      "vllm_args": ["--max-model-len", "32768"],
+      "tool_call_parser": "gemma4"
     },
     {
       "id": "reasoning",
@@ -143,7 +154,8 @@ _BUILTIN = r"""
       "size_class": "large",
       "context_length": 32768,
       "vram_fraction": 0.90,
-      "vllm_args": ["--tensor-parallel-size", "2"]
+      "vllm_args": ["--tensor-parallel-size", "2"],
+      "tool_call_parser": "llama3_json"
     },
     {
       "id": "gemma-31b",
@@ -155,7 +167,8 @@ _BUILTIN = r"""
       "size_class": "medium",
       "context_length": 262144,
       "vram_fraction": 0.45,
-      "vllm_args": ["--max-model-len", "32768"]
+      "vllm_args": ["--max-model-len", "32768"],
+      "tool_call_parser": "gemma4"
     }
   ]
 }
