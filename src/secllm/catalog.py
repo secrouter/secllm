@@ -146,7 +146,7 @@ _BUILTIN = r"""
       "name": "Reasoning — gpt-oss-20b",
       "description": "OpenAI open-weight reasoning model; efficient. Same family SecRouter defaults to on Bedrock.",
       "hf_model": "openai/gpt-oss-20b",
-      "mlx_model": "mlx-community/gpt-oss-20b-mlx-q8",
+      "mlx_model": "mlx-community/gpt-oss-20b-MXFP4-Q8",
       "origin": "US (OpenAI)",
       "size_class": "medium",
       "context_length": 32768,
