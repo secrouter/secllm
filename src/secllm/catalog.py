@@ -42,6 +42,12 @@ class Model:
     # `llama3_json` for Llama 3.x, `gemma4` for Gemma 4, etc. (see `vllm serve --tool-call-parser`
     # choices). Empty (the default) = tool calling stays off for this model.
     tool_call_parser: str = ""
+    # Default sampling overrides for this model — passed to the vllm/metal backend as vLLM's
+    # --override-generation-config, applied when a request omits the param. Lets a model that
+    # garbles at its own default ship a saner one: the Gemma 4 26B 4-bit quant gives stray non-Latin
+    # tokens inflated logits, so ANY temperature > 0 eventually samples them — {"temperature": 0.0}
+    # (greedy/argmax) is the only reliably clean default. Empty ({}) = leave the model's config alone.
+    sampling_override: dict[str, Any] = field(default_factory=dict)
 
     def repo_id(self, backend: str) -> str:
         """The actual Hugging Face repo id ``backend`` loads — ``mlx_model`` (falling back to
@@ -64,6 +70,7 @@ class Model:
             "vram_fraction": self.vram_fraction,
             "mlx_model": self.mlx_model,
             "tool_call_parser": self.tool_call_parser,
+            "sampling_override": self.sampling_override,
         }
 
 
@@ -95,6 +102,7 @@ class Catalog:
                 vllm_args=list(m.get("vllm_args", [])),
                 mlx_model=m.get("mlx_model", ""),
                 tool_call_parser=m.get("tool_call_parser", ""),
+                sampling_override=dict(m.get("sampling_override", {})),
             )
         return Catalog(models=models)
 
@@ -130,7 +138,8 @@ _BUILTIN = r"""
       "context_length": 262144,
       "vram_fraction": 0.35,
       "vllm_args": ["--max-model-len", "32768"],
-      "tool_call_parser": "gemma4"
+      "tool_call_parser": "gemma4",
+      "sampling_override": {"temperature": 0.0, "top_p": 0.9}
     },
     {
       "id": "reasoning",
@@ -168,7 +177,8 @@ _BUILTIN = r"""
       "context_length": 262144,
       "vram_fraction": 0.45,
       "vllm_args": ["--max-model-len", "32768"],
-      "tool_call_parser": "gemma4"
+      "tool_call_parser": "gemma4",
+      "sampling_override": {"temperature": 0.0, "top_p": 0.9}
     }
   ]
 }

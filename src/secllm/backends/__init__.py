@@ -14,6 +14,7 @@ endpoint, so the supervisor, health monitor, and router treat them identically:
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -49,6 +50,19 @@ def _tool_call_args(model: Model) -> list[str]:
     if not model.tool_call_parser:
         return []
     return ["--enable-auto-tool-choice", "--tool-call-parser", model.tool_call_parser]
+
+
+def _sampling_args(model: Model) -> list[str]:
+    """vLLM's ``--override-generation-config`` for ``model``, when the catalog gives it a
+    ``sampling_override`` — this replaces the fields it names in the model's own
+    ``generation_config.json`` defaults (applied only when a request omits the param). Used to
+    tame a model that garbles at its shipped default: the Gemma 4 26B 4-bit quant gives stray
+    non-Latin tokens inflated logits, so a greedy default (temperature 0.0) keeps output clean
+    without forcing every client to send one. Empty when the model sets no override. Shared by
+    the vllm and metal backends (mlx/mock do their own sampling)."""
+    if not model.sampling_override:
+        return []
+    return ["--override-generation-config", json.dumps(model.sampling_override)]
 
 
 def build_launch_command(
@@ -102,7 +116,7 @@ def build_launch_command(
             str(memory_fraction or model.vram_fraction or cfg.metal_mem_util),
             "--enforce-eager",
         ]
-        return cmd + _tool_call_args(model)
+        return cmd + _tool_call_args(model) + _sampling_args(model)
     # vLLM: expose the friendly catalog id as the served model name.
     cmd = [
         "vllm", "serve", model.hf_model,
@@ -112,4 +126,4 @@ def build_launch_command(
         "--gpu-memory-utilization", str(memory_fraction or cfg.gpu_memory_utilization),
     ]
     return (cmd + _vllm_args_with_context(model.vllm_args, context_length)
-            + _tool_call_args(model) + list(cfg.vllm_extra_args))
+            + _tool_call_args(model) + _sampling_args(model) + list(cfg.vllm_extra_args))

@@ -135,3 +135,25 @@ def test_build_launch_command_vllm_tool_call_parser_enables_tools():
     cmd = build_launch_command(_cfg("vllm"), _model(tool_call_parser="llama3_json"), port=12000)
     assert "--enable-auto-tool-choice" in cmd
     assert cmd[cmd.index("--tool-call-parser") + 1] == "llama3_json"
+
+
+def test_build_launch_command_metal_sampling_override_passed():
+    # A model's sampling_override becomes vLLM's --override-generation-config (JSON), taming a
+    # model that garbles at its shipped default sampling (e.g. Gemma 4 26B 4-bit at temperature 1.0).
+    import json as _json
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
+    cmd = build_launch_command(
+        cfg, _model(sampling_override={"temperature": 0.3, "top_p": 0.9}), port=12000)
+    got = _json.loads(cmd[cmd.index("--override-generation-config") + 1])
+    assert got == {"temperature": 0.3, "top_p": 0.9}
+    # no override → flag absent
+    off = build_launch_command(cfg, _model(sampling_override={}), port=12000)
+    assert "--override-generation-config" not in off
+
+
+def test_build_launch_command_vllm_sampling_override_passed():
+    import json as _json
+    cmd = build_launch_command(
+        _cfg("vllm"), _model(sampling_override={"temperature": 0.3}), port=12000)
+    got = _json.loads(cmd[cmd.index("--override-generation-config") + 1])
+    assert got == {"temperature": 0.3}
