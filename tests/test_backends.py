@@ -99,7 +99,8 @@ def test_build_launch_command_metal_serves_mlx_repo_from_external_venv():
     assert cmd[cmd.index("--served-model-name") + 1] == "reasoning"
     assert cmd[cmd.index("--max-model-len") + 1] == "8192"  # cfg.metal_max_model_len default
     assert "--enforce-eager" in cmd
-    assert "--gpu-memory-utilization" not in cmd  # no GPU knobs on Metal
+    # Per-worker unified-memory cap so co-resident models don't each grab ~90% and OOM.
+    assert cmd[cmd.index("--gpu-memory-utilization") + 1] == "0.4"  # cfg.metal_mem_util default
 
 
 def test_build_launch_command_metal_context_override_replaces_max_model_len():

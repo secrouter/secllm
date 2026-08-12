@@ -76,6 +76,11 @@ class Config:
     # backend == "metal".
     metal_venv: str = "~/.venv-vllm-metal"
     metal_max_model_len: int = 8192  # default --max-model-len for metal workers (bounds KV cache)
+    # Fraction of unified memory EACH metal worker may reserve (vLLM --gpu-memory-utilization).
+    # vLLM pre-allocates its KV cache to this fraction at load, so the default 0.9 makes a SINGLE
+    # worker grab ~90% of RAM — two co-resident models then OOM/swap the machine. 0.4 lets ~2
+    # models coexist on unified memory (SECLLM_MAX_LOADED=0); lower it further for 3+.
+    metal_mem_util: float = 0.4
 
     @staticmethod
     def from_env() -> "Config":
@@ -111,4 +116,5 @@ class Config:
             gpu_devices=_int_list("SECLLM_GPUS"),
             metal_venv=_env("SECLLM_METAL_VENV", "~/.venv-vllm-metal"),
             metal_max_model_len=_int("SECLLM_METAL_MAX_MODEL_LEN", 8192),
+            metal_mem_util=_float("SECLLM_METAL_MEM_UTIL", 0.4),
         )
