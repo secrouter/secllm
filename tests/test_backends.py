@@ -25,7 +25,7 @@ def _model(**overrides) -> Model:
     base = dict(
         id="reasoning", name="Reasoning", description="d", hf_model="openai/gpt-oss-20b",
         origin="US (OpenAI)", vllm_args=["--max-model-len", "32768"],
-        mlx_model="mlx-community/gpt-oss-20b-mlx-q8",
+        mlx_model="mlx-community/gpt-oss-20b-MXFP4-Q8",
     )
     base.update(overrides)
     return Model(**base)
@@ -95,7 +95,7 @@ def test_build_launch_command_metal_serves_mlx_repo_from_external_venv():
     cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
     cmd = build_launch_command(cfg, _model(), port=12000)
     assert cmd[:2] == ["/opt/vm/bin/vllm", "serve"]
-    assert cmd[2] == "mlx-community/gpt-oss-20b-mlx-q8"  # the MLX quant, not hf_model
+    assert cmd[2] == "mlx-community/gpt-oss-20b-MXFP4-Q8"  # the MLX quant, not hf_model
     assert cmd[cmd.index("--served-model-name") + 1] == "reasoning"
     assert cmd[cmd.index("--max-model-len") + 1] == "8192"  # cfg.metal_max_model_len default
     assert "--enforce-eager" in cmd
