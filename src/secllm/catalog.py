@@ -106,7 +106,7 @@ _BUILTIN = r"""
       "origin": "US (Meta)",
       "size_class": "small",
       "context_length": 16384,
-      "vram_fraction": 0.30,
+      "vram_fraction": 0.15,
       "vllm_args": ["--max-model-len", "16384"]
     },
     {
@@ -118,6 +118,7 @@ _BUILTIN = r"""
       "origin": "US (Google)",
       "size_class": "medium",
       "context_length": 262144,
+      "vram_fraction": 0.35,
       "vllm_args": ["--max-model-len", "32768"]
     },
     {
@@ -141,6 +142,7 @@ _BUILTIN = r"""
       "origin": "US (Meta)",
       "size_class": "large",
       "context_length": 32768,
+      "vram_fraction": 0.90,
       "vllm_args": ["--tensor-parallel-size", "2"]
     },
     {
@@ -152,6 +154,7 @@ _BUILTIN = r"""
       "origin": "US (Google)",
       "size_class": "medium",
       "context_length": 262144,
+      "vram_fraction": 0.45,
       "vllm_args": ["--max-model-len", "32768"]
     }
   ]

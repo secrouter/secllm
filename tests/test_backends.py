@@ -108,3 +108,14 @@ def test_build_launch_command_metal_context_override_replaces_max_model_len():
     cmd = build_launch_command(cfg, _model(), port=12000, context_length=4096)
     assert cmd[cmd.index("--max-model-len") + 1] == "4096"
     assert cmd.count("--max-model-len") == 1  # overridden, not duplicated
+
+
+def test_build_launch_command_metal_uses_per_model_vram_fraction():
+    # A model's own vram_fraction sizes its --gpu-memory-utilization; the global metal_mem_util
+    # is only the fallback for a model that leaves it unset (0.0).
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm", metal_mem_util=0.4)
+    cmd = build_launch_command(cfg, _model(vram_fraction=0.35), port=12000)
+    assert cmd[cmd.index("--gpu-memory-utilization") + 1] == "0.35"
+    # unset (0.0) → fallback to the global default
+    cmd2 = build_launch_command(cfg, _model(vram_fraction=0.0), port=12000)
+    assert cmd2[cmd2.index("--gpu-memory-utilization") + 1] == "0.4"
