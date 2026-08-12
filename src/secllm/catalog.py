@@ -111,13 +111,13 @@ _BUILTIN = r"""
     },
     {
       "id": "balanced",
-      "name": "Balanced — Gemma 4 12B",
-      "description": "Google's mid-size dense model; long context and strong general/coding quality at a moderate footprint — the everyday default between `fast` and the big models.",
-      "hf_model": "google/gemma-4-12B-it",
-      "mlx_model": "mlx-community/gemma-4-12B-it-4bit",
+      "name": "Balanced — Gemma 4 26B MoE",
+      "description": "Google's mixture-of-experts (4B active of 26B total); high-throughput reasoning at a fraction of the dense per-token cost — the everyday default between `fast` and the big models. (The 12B is a unified multimodal checkpoint that doesn't serve as text, so the balanced tier uses the 26B.)",
+      "hf_model": "google/gemma-4-26B-A4B-it",
+      "mlx_model": "mlx-community/gemma-4-26b-a4b-it-4bit",
       "origin": "US (Google)",
       "size_class": "medium",
-      "context_length": 131072,
+      "context_length": 262144,
       "vllm_args": ["--max-model-len", "32768"]
     },
     {
@@ -149,17 +149,6 @@ _BUILTIN = r"""
       "description": "Google's flagship dense model; 256K context, strong reasoning/coding — bridges server-grade quality and local execution.",
       "hf_model": "google/gemma-4-31B-it",
       "mlx_model": "mlx-community/gemma-4-31b-it-4bit",
-      "origin": "US (Google)",
-      "size_class": "medium",
-      "context_length": 262144,
-      "vllm_args": ["--max-model-len", "32768"]
-    },
-    {
-      "id": "gemma-26b",
-      "name": "Gemma 4 — 26B MoE",
-      "description": "Mixture-of-experts (4B active of 26B total); high-throughput reasoning at a fraction of the 31B's per-token cost.",
-      "hf_model": "google/gemma-4-26B-A4B-it",
-      "mlx_model": "mlx-community/gemma-4-26b-a4b-it-4bit",
       "origin": "US (Google)",
       "size_class": "medium",
       "context_length": 262144,
