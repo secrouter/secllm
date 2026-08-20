@@ -5,9 +5,11 @@ from __future__ import annotations
 from secllm.catalog import Catalog
 
 
-def test_builtin_has_the_curated_tiers():
+def test_builtin_has_the_curated_models():
     catalog = Catalog.load()
-    assert {"fast", "balanced", "reasoning", "large"} <= set(catalog.ids())
+    assert {
+        "Llama-3.2-3B-Instruct", "gemma-4-26B-A4B-it", "gpt-oss-20b", "Llama-3.3-70B-Instruct"
+    } <= set(catalog.ids())
 
 
 def test_builtin_is_us_origin_only():

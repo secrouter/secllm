@@ -16,7 +16,7 @@ from httpx import ASGITransport
 API_TOKEN = "secret-api-token"
 API = {"Authorization": f"Bearer {API_TOKEN}"}
 WRONG = {"Authorization": "Bearer wrong-token"}
-CHAT_BODY = {"model": "fast", "messages": [{"role": "user", "content": "hi"}]}
+CHAT_BODY = {"model": "Llama-3.2-3B-Instruct", "messages": [{"role": "user", "content": "hi"}]}
 
 
 def _client(app) -> httpx.AsyncClient:
@@ -51,8 +51,8 @@ async def test_v1_models_requires_token_when_configured(stack):
 @pytest.mark.parametrize("stack", [API_TOKEN], indirect=True)
 async def test_v1_chat_completions_requires_token_when_configured(stack):
     app, ctx = stack
-    ctx.supervisor.load("fast")
-    await _wait_healthy(ctx, "fast")
+    ctx.supervisor.load("Llama-3.2-3B-Instruct")
+    await _wait_healthy(ctx, "Llama-3.2-3B-Instruct")
 
     async with _client(app) as c:
         r = await c.post("/v1/chat/completions", json=CHAT_BODY)
@@ -70,14 +70,14 @@ async def test_v1_chat_completions_requires_token_when_configured(stack):
 @pytest.mark.parametrize("stack", [API_TOKEN], indirect=True)
 async def test_v1_completions_and_embeddings_require_token_when_configured(stack):
     app, ctx = stack
-    ctx.supervisor.load("fast")
-    await _wait_healthy(ctx, "fast")
+    ctx.supervisor.load("Llama-3.2-3B-Instruct")
+    await _wait_healthy(ctx, "Llama-3.2-3B-Instruct")
 
     async with _client(app) as c:
-        r = await c.post("/v1/completions", json={"model": "fast", "prompt": "hi"})
+        r = await c.post("/v1/completions", json={"model": "Llama-3.2-3B-Instruct", "prompt": "hi"})
         assert r.status_code == 401
 
-        r = await c.post("/v1/embeddings", json={"model": "fast", "input": "hi"})
+        r = await c.post("/v1/embeddings", json={"model": "Llama-3.2-3B-Instruct", "input": "hi"})
         assert r.status_code == 401
 
 
@@ -93,8 +93,8 @@ async def test_health_stays_open_when_token_configured(stack):
 async def test_v1_open_when_token_unset(stack):
     """Default behavior (SECLLM_API_TOKEN unset) is unchanged: /v1 stays open."""
     app, ctx = stack
-    ctx.supervisor.load("fast")
-    await _wait_healthy(ctx, "fast")
+    ctx.supervisor.load("Llama-3.2-3B-Instruct")
+    await _wait_healthy(ctx, "Llama-3.2-3B-Instruct")
 
     async with _client(app) as c:
         r = await c.get("/v1/models")

@@ -48,7 +48,7 @@ SecRouter — at `http://\<host\>:11400/v1`.
 ```bash
 curl http://localhost:11400/v1/chat/completions \
   -H 'Content-Type: application/json' \
-  -d '{"model":"balanced","messages":[{"role":"user","content":"hello"}]}'
+  -d '{"model":"Llama-3.1-8B-Instruct","messages":[{"role":"user","content":"hello"}]}'
 ```
 
 ## Wiring SecRouter to SecLLM
@@ -59,7 +59,7 @@ Add SecLLM as a local provider and put it in the egress allow-list:
 "providers": {
   "secllm": { "api": "openai", "baseUrl": "http://secllm.internal:11400/v1" }
 },
-"tiers": { "SIMPLE": { "primary": "secllm/fast" }, "MEDIUM": { "primary": "secllm/balanced" } },
+"tiers": { "SIMPLE": { "primary": "secllm/Llama-3.2-3B-Instruct" }, "MEDIUM": { "primary": "secllm/Llama-3.1-8B-Instruct" } },
 "security": { "egress": { "allowlist": [
   { "provider": "secllm", "allowedHost": "secllm.internal", "authorizedClassifications": ["CUI"] }
 ] } }
@@ -75,10 +75,10 @@ any other provider.
 
 | id | model | origin | class |
 |---|---|---|---|
-| `fast` | Llama 3.2 3B | US (Meta) | small |
-| `balanced` | Llama 3.1 8B | US (Meta) | medium |
-| `reasoning` | gpt-oss-20b | US (OpenAI) | medium |
-| `large` | Llama 3.3 70B | US (Meta) | large |
+| `Llama-3.2-3B-Instruct` | Llama 3.2 3B | US (Meta) | small |
+| `Llama-3.1-8B-Instruct` | Llama 3.1 8B | US (Meta) | medium |
+| `gpt-oss-20b` | gpt-oss-20b | US (OpenAI) | medium |
+| `Llama-3.3-70B-Instruct` | Llama 3.3 70B | US (Meta) | large |
 
 Add any model you like — PRC-jurisdiction models (Qwen/DeepSeek/…) are simply excluded from
 the shipped defaults, consistent with SecRouter's posture.
@@ -160,7 +160,7 @@ circuit breaker, any instance with recent connection/5xx/timeout failures — a 
 instance stops getting traffic without operator intervention.
 
 Instances can run the **same** model (extra capacity — any of them can answer) or
-**different** models (a partitioned catalog — e.g. `fast` on one box, `large` on
+**different** models (a partitioned catalog — e.g. `Llama-3.2-3B-Instruct` on one box, `Llama-3.3-70B-Instruct` on
 another). SecRouter learns which models each instance is currently serving by
 polling every instance's `GET /v1/models`, and routes a request only to the
 instances that actually serve the requested model, round-robining across those

@@ -47,13 +47,13 @@ def test_downloads_start_marks_downloading_then_complete(monkeypatch):
     # observable a moment later; assert the eventual, settled state instead.
     monkeypatch.setattr(dl, "snapshot_download", lambda *a, **k: "/fake/path")
     d = dl.Downloads()
-    d.start("fast", "some/repo")
+    d.start("Llama-3.2-3B-Instruct", "some/repo")
     for _ in range(50):
-        if d.status("fast").status != "downloading":
+        if d.status("Llama-3.2-3B-Instruct").status != "downloading":
             break
         time.sleep(0.02)
-    assert d.status("fast").status == "complete"
-    assert d.status("fast").finished_at > 0
+    assert d.status("Llama-3.2-3B-Instruct").status == "complete"
+    assert d.status("Llama-3.2-3B-Instruct").finished_at > 0
 
 
 def test_downloads_start_marks_error_on_failure(monkeypatch):
@@ -61,12 +61,12 @@ def test_downloads_start_marks_error_on_failure(monkeypatch):
         raise RuntimeError("network is down")
     monkeypatch.setattr(dl, "snapshot_download", _raise)
     d = dl.Downloads()
-    d.start("fast", "some/repo")
+    d.start("Llama-3.2-3B-Instruct", "some/repo")
     for _ in range(50):
-        if d.status("fast").status != "downloading":
+        if d.status("Llama-3.2-3B-Instruct").status != "downloading":
             break
         time.sleep(0.02)
-    state = d.status("fast")
+    state = d.status("Llama-3.2-3B-Instruct")
     assert state.status == "error"
     assert "network is down" in state.error
 
@@ -77,9 +77,9 @@ def test_downloads_start_sets_downloading_synchronously_before_returning(monkeyp
     spawning the background thread, not racing to see whichever state happens to land first."""
     monkeypatch.setattr(dl, "snapshot_download", lambda *a, **k: time.sleep(0.3) or "/fake/path")
     d = dl.Downloads()
-    state = d.start("fast", "some/repo")
+    state = d.start("Llama-3.2-3B-Instruct", "some/repo")
     assert state.status == "downloading"
-    assert d.status("fast").status == "downloading"
+    assert d.status("Llama-3.2-3B-Instruct").status == "downloading"
 
 
 def test_downloads_start_is_idempotent_while_in_flight(monkeypatch):
@@ -94,8 +94,8 @@ def test_downloads_start_is_idempotent_while_in_flight(monkeypatch):
 
     monkeypatch.setattr(dl, "snapshot_download", slow_download)
     d = dl.Downloads()
-    first = d.start("fast", "some/repo")
-    second = d.start("fast", "some/repo")
+    first = d.start("Llama-3.2-3B-Instruct", "some/repo")
+    second = d.start("Llama-3.2-3B-Instruct", "some/repo")
     assert first is second
     time.sleep(0.5)
     assert len(started) == 1
@@ -114,11 +114,11 @@ def test_status_view_computes_percent_from_blobs(monkeypatch, tmp_path):
     repo's known total. Point the HF cache at a tmp dir, write 250 of 1000 bytes → 25%."""
     monkeypatch.setattr(dl, "HF_HUB_CACHE", str(tmp_path))
     d = dl.Downloads()
-    d._states["fast"] = dl.DownloadState(status="downloading", total_bytes=1000)
+    d._states["Llama-3.2-3B-Instruct"] = dl.DownloadState(status="downloading", total_bytes=1000)
     blobs = tmp_path / "models--meta-llama--Llama-3.2-3B-Instruct" / "blobs"
     blobs.mkdir(parents=True)
     (blobs / "deadbeef").write_bytes(b"x" * 250)
-    view = d.status_view("fast", "meta-llama/Llama-3.2-3B-Instruct")
+    view = d.status_view("Llama-3.2-3B-Instruct", "meta-llama/Llama-3.2-3B-Instruct")
     assert view["status"] == "downloading"
     assert view["downloaded_bytes"] == 250
     assert view["total_bytes"] == 1000
@@ -132,7 +132,7 @@ def test_status_view_dedupes_finalized_and_incomplete_blobs(monkeypatch, tmp_pat
     Each blob must count once — the finalized file if present, else its largest partial."""
     monkeypatch.setattr(dl, "HF_HUB_CACHE", str(tmp_path))
     d = dl.Downloads()
-    d._states["fast"] = dl.DownloadState(status="downloading", total_bytes=1000)
+    d._states["Llama-3.2-3B-Instruct"] = dl.DownloadState(status="downloading", total_bytes=1000)
     blobs = tmp_path / "models--x--y" / "blobs"
     blobs.mkdir(parents=True)
     # finalized 600B blob + two stale partials for the SAME hash (must be ignored).
@@ -143,7 +143,7 @@ def test_status_view_dedupes_finalized_and_incomplete_blobs(monkeypatch, tmp_pat
     (blobs / "bbbb.33333333.incomplete").write_bytes(b"x" * 200)
     (blobs / "bbbb.44444444.incomplete").write_bytes(b"x" * 350)
     (blobs / "cccc").write_bytes(b"x" * 50)  # a small finalized blob
-    view = d.status_view("fast", "x/y")
+    view = d.status_view("Llama-3.2-3B-Instruct", "x/y")
     # deduped: 600 (aaaa) + 350 (largest bbbb partial) + 50 (cccc) = 1000, NOT the naive 1800.
     assert view["downloaded_bytes"] == 1000
     assert view["percent"] == 100.0  # never > 100
@@ -154,11 +154,11 @@ def test_status_view_percent_none_when_total_unknown(monkeypatch, tmp_path):
     # disk, rather than a divide-by-zero or a bogus 0%.
     monkeypatch.setattr(dl, "HF_HUB_CACHE", str(tmp_path))
     d = dl.Downloads()
-    d._states["fast"] = dl.DownloadState(status="downloading", total_bytes=0)
+    d._states["Llama-3.2-3B-Instruct"] = dl.DownloadState(status="downloading", total_bytes=0)
     blobs = tmp_path / "models--x--y" / "blobs"
     blobs.mkdir(parents=True)
     (blobs / "blob").write_bytes(b"z" * 42)
-    view = d.status_view("fast", "x/y")
+    view = d.status_view("Llama-3.2-3B-Instruct", "x/y")
     assert view["downloaded_bytes"] == 42
     assert view["total_bytes"] == 0
     assert view["percent"] is None
@@ -167,8 +167,8 @@ def test_status_view_percent_none_when_total_unknown(monkeypatch, tmp_path):
 def test_status_view_complete_reports_100_without_touching_disk():
     # A completed download is 100% by definition — no blobs walk needed (HF_HUB_CACHE untouched).
     d = dl.Downloads()
-    d._states["fast"] = dl.DownloadState(status="complete", total_bytes=500, finished_at=1.0)
-    view = d.status_view("fast", "x/y")
+    d._states["Llama-3.2-3B-Instruct"] = dl.DownloadState(status="complete", total_bytes=500, finished_at=1.0)
+    view = d.status_view("Llama-3.2-3B-Instruct", "x/y")
     assert view["percent"] == 100.0
     assert view["downloaded_bytes"] == 500
 
@@ -199,12 +199,12 @@ def test_start_populates_total_bytes_from_hf_api(monkeypatch):
     monkeypatch.setattr(dl, "HfApi", _Api)
     monkeypatch.setattr(dl, "snapshot_download", lambda *a, **k: "/fake/path")
     d = dl.Downloads()
-    d.start("fast", "some/repo")
+    d.start("Llama-3.2-3B-Instruct", "some/repo")
     for _ in range(100):
-        if d.status("fast").total_bytes:
+        if d.status("Llama-3.2-3B-Instruct").total_bytes:
             break
         time.sleep(0.02)
-    assert d.status("fast").total_bytes == 600
+    assert d.status("Llama-3.2-3B-Instruct").total_bytes == 600
 
 
 def test_start_total_bytes_is_best_effort_on_hf_failure(monkeypatch):
@@ -217,10 +217,10 @@ def test_start_total_bytes_is_best_effort_on_hf_failure(monkeypatch):
     monkeypatch.setattr(dl, "HfApi", _Api)
     monkeypatch.setattr(dl, "snapshot_download", lambda *a, **k: "/fake/path")
     d = dl.Downloads()
-    d.start("fast", "some/repo")
+    d.start("Llama-3.2-3B-Instruct", "some/repo")
     for _ in range(50):
-        if d.status("fast").status != "downloading":
+        if d.status("Llama-3.2-3B-Instruct").status != "downloading":
             break
         time.sleep(0.02)
-    assert d.status("fast").status == "complete"
-    assert d.status("fast").total_bytes == 0
+    assert d.status("Llama-3.2-3B-Instruct").status == "complete"
+    assert d.status("Llama-3.2-3B-Instruct").total_bytes == 0

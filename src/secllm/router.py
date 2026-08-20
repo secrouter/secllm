@@ -1,7 +1,7 @@
 """OpenAI-compatible router — proxies ``/v1/*`` to the loaded worker for the requested model.
 
 This is the endpoint SecRouter points at as a local, self-hosted provider. Requests name a
-model by its catalog id (``fast``, ``balanced``, …); if that model isn't loaded and healthy,
+model by its catalog id (``gemma-4-26B-A4B-it``, ``gpt-oss-20b``, …); if that model isn't loaded and healthy,
 the caller gets a clear ``404``/``503`` instead of a hang.
 """
 

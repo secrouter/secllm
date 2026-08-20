@@ -16,7 +16,7 @@ from typing import Any
 
 @dataclass
 class Model:
-    id: str  # the OpenAI model name clients use (e.g. "balanced")
+    id: str  # the OpenAI model name clients use (e.g. "gemma-4-26B-A4B-it")
     name: str  # friendly display name
     description: str
     hf_model: str  # the Hugging Face repo id vLLM loads
@@ -27,7 +27,8 @@ class Model:
     # how much VRAM to hand vLLM (--gpu-memory-utilization) and how much of a card it consumes
     # when deciding whether another model still fits. 0 (the default) falls back to the global
     # SECLLM_GPU_MEMORY_UTILIZATION. A tensor-parallel model reserves this fraction on EACH GPU
-    # it spans. Left 0 for `large` (it's TP across whole cards, so per-card packing is moot).
+    # it spans. Left 0 for a whole-card tensor-parallel model (TP across whole cards, so per-card
+    # packing is moot).
     vram_fraction: float = 0.0
     vllm_args: list[str] = field(default_factory=list)
     # The MLX-converted repo id (e.g. "mlx-community/...-4bit") the mlx backend loads instead of
@@ -115,8 +116,8 @@ _BUILTIN = r"""
   "_note": "US-origin open-weight models (SecRouter supply-chain posture). Edit + point SECLLM_CATALOG at your own file to change this; PRC-jurisdiction models are excluded from the defaults.",
   "models": [
     {
-      "id": "fast",
-      "name": "Fast — Llama 3.2 3B",
+      "id": "Llama-3.2-3B-Instruct",
+      "name": "Llama 3.2 3B Instruct",
       "description": "Small Meta model; low latency for simple tasks.",
       "hf_model": "meta-llama/Llama-3.2-3B-Instruct",
       "mlx_model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
@@ -128,9 +129,9 @@ _BUILTIN = r"""
       "tool_call_parser": "llama3_json"
     },
     {
-      "id": "balanced",
-      "name": "Balanced — Gemma 4 26B MoE",
-      "description": "Google's mixture-of-experts (4B active of 26B total); high-throughput reasoning at a fraction of the dense per-token cost — the everyday default between `fast` and the big models. (The 12B is a unified multimodal checkpoint that doesn't serve as text, so the balanced tier uses the 26B.)",
+      "id": "gemma-4-26B-A4B-it",
+      "name": "Gemma 4 26B (A4B MoE)",
+      "description": "Google's mixture-of-experts (4B active of 26B total); high-throughput reasoning at a fraction of the dense per-token cost. (The 12B is a unified multimodal checkpoint that doesn't serve as text, so this is the 26B.)",
       "hf_model": "google/gemma-4-26B-A4B-it",
       "mlx_model": "mlx-community/gemma-4-26b-a4b-it-4bit",
       "origin": "US (Google)",
@@ -142,8 +143,8 @@ _BUILTIN = r"""
       "sampling_override": {"temperature": 0.0, "top_p": 0.9}
     },
     {
-      "id": "reasoning",
-      "name": "Reasoning — gpt-oss-20b",
+      "id": "gpt-oss-20b",
+      "name": "gpt-oss-20b",
       "description": "OpenAI open-weight reasoning model; efficient. Same family SecRouter defaults to on Bedrock.",
       "hf_model": "openai/gpt-oss-20b",
       "mlx_model": "mlx-community/gpt-oss-20b-MXFP4-Q8",
@@ -154,8 +155,8 @@ _BUILTIN = r"""
       "vllm_args": []
     },
     {
-      "id": "large",
-      "name": "Large — Llama 3.3 70B",
+      "id": "Llama-3.3-70B-Instruct",
+      "name": "Llama 3.3 70B Instruct",
       "description": "High quality; needs a large or multi-GPU host.",
       "hf_model": "meta-llama/Llama-3.3-70B-Instruct",
       "mlx_model": "mlx-community/Llama-3.3-70B-Instruct-4bit",
@@ -167,7 +168,7 @@ _BUILTIN = r"""
       "tool_call_parser": "llama3_json"
     },
     {
-      "id": "gemma-31b",
+      "id": "gemma-4-31B-it",
       "name": "Gemma 4 — 31B",
       "description": "Google's flagship dense model; 256K context, strong reasoning/coding — bridges server-grade quality and local execution.",
       "hf_model": "google/gemma-4-31B-it",

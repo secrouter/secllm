@@ -18,7 +18,7 @@ minutes), and point SecRouter at `http://<host>:11400/v1`.
 Preload at boot instead of via the console:
 
 ```bash
-SECLLM_AUTOSTART=balanced docker compose up -d
+SECLLM_AUTOSTART=gemma-4-26B-A4B-it docker compose up -d
 ```
 
 ## GPU host (native, no container)
