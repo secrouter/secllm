@@ -7,9 +7,9 @@ from secllm.stats import Stats
 
 def test_records_requests_latency_and_tokens():
     s = Stats()
-    s.record("fast", "/v1/chat/completions", 200, 100.0, prompt_tokens=10, completion_tokens=5)
-    s.record("fast", "/v1/chat/completions", 200, 200.0, prompt_tokens=20, completion_tokens=10)
-    v = s.for_model("fast")
+    s.record("Llama-3.2-3B-Instruct", "/v1/chat/completions", 200, 100.0, prompt_tokens=10, completion_tokens=5)
+    s.record("Llama-3.2-3B-Instruct", "/v1/chat/completions", 200, 200.0, prompt_tokens=20, completion_tokens=10)
+    v = s.for_model("Llama-3.2-3B-Instruct")
     assert v["requests"] == 2 and v["errors"] == 0
     assert v["avg_latency_ms"] == 150.0
     assert v["prompt_tokens"] == 30 and v["completion_tokens"] == 15 and v["tokens"] == 45
@@ -17,10 +17,10 @@ def test_records_requests_latency_and_tokens():
 
 def test_counts_errors_by_status():
     s = Stats()
-    s.record("fast", "/v1/chat/completions", 200, 10.0)
-    s.record("fast", "/v1/chat/completions", 503, 5.0)
-    s.record("fast", "/v1/chat/completions", 404, 5.0)
-    v = s.for_model("fast")
+    s.record("Llama-3.2-3B-Instruct", "/v1/chat/completions", 200, 10.0)
+    s.record("Llama-3.2-3B-Instruct", "/v1/chat/completions", 503, 5.0)
+    s.record("Llama-3.2-3B-Instruct", "/v1/chat/completions", 404, 5.0)
+    v = s.for_model("Llama-3.2-3B-Instruct")
     assert v["requests"] == 3 and v["errors"] == 2 and v["last_status"] == 404
 
 
@@ -31,10 +31,10 @@ def test_unknown_model_is_zeroed():
 
 def test_snapshot_overall_and_per_model():
     s = Stats()
-    s.record("fast", "/v1/chat/completions", 200, 100.0, 10, 5)
-    s.record("balanced", "/v1/chat/completions", 200, 300.0, 30, 20)
+    s.record("Llama-3.2-3B-Instruct", "/v1/chat/completions", 200, 100.0, 10, 5)
+    s.record("gemma-4-26B-A4B-it", "/v1/chat/completions", 200, 300.0, 30, 20)
     snap = s.snapshot()
-    assert set(snap["by_model"]) == {"fast", "balanced"}
+    assert set(snap["by_model"]) == {"Llama-3.2-3B-Instruct", "gemma-4-26B-A4B-it"}
     overall = snap["overall"]
     assert overall["requests"] == 2 and overall["tokens"] == 65
     assert overall["avg_latency_ms"] == 200.0  # (100 + 300) / 2
