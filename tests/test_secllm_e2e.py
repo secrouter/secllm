@@ -72,6 +72,47 @@ async def test_streaming_proxy(stack):
     assert "data:" in body and "[DONE]" in body
 
 
+async def test_streaming_records_usage_from_final_chunk(stack):
+    # OpenAI clients send stream_options.include_usage, and vLLM (mirrored by the mock — see
+    # backends/mock_server.py) emits ONE final usage chunk before [DONE]. The router parses
+    # that tail so agentic (streaming) load shows up in stats instead of counting zero tokens.
+    app, ctx = stack
+    ctx.supervisor.load("Llama-3.2-3B-Instruct")
+    await _wait_healthy(ctx, "Llama-3.2-3B-Instruct")
+    body = ""
+    async with _client(app) as c:
+        async with c.stream("POST", "/v1/chat/completions",
+                            json={"model": "Llama-3.2-3B-Instruct", "stream": True,
+                                  "stream_options": {"include_usage": True},
+                                  "messages": [{"role": "user", "content": "count my tokens"}]}) as r:
+            assert r.status_code == 200
+            async for chunk in r.aiter_text():
+                body += chunk
+    # The proxied bytes still carry the usage chunk unaltered — clients see what vLLM sent.
+    assert '"usage"' in body and "[DONE]" in body
+    v = ctx.stats.for_model("Llama-3.2-3B-Instruct")
+    assert v["requests"] == 1 and v["last_status"] == 200
+    assert v["prompt_tokens"] == 3  # "count my tokens" — the mock counts words
+    assert v["completion_tokens"] > 0 and v["tokens"] == v["prompt_tokens"] + v["completion_tokens"]
+
+
+def test_stream_usage_parses_last_chunk_across_boundaries():
+    # Unit-level check of the tail parser: the usage line survives being split across raw
+    # chunks (the router concatenates into its rolling tail), null usage fields on delta
+    # chunks are skipped in favor of the LAST real one, and garbage tails degrade to (0, 0).
+    from secllm.router import _stream_usage
+
+    delta = b'data: {"choices": [{"delta": {"content": "hi"}}], "usage": null}\n\n'
+    usage = b'data: {"choices": [], "usage": {"prompt_tokens": 7, "completion_tokens": 11}}\n\n'
+    done = b"data: [DONE]\n\n"
+    # Simulate arbitrary chunk boundaries: reassembled tail is what the parser ever sees.
+    tail = b"".join([delta, usage[:23], usage[23:], done])
+    assert _stream_usage(tail) == (7, 11)
+    assert _stream_usage(delta + done) == (0, 0)  # null usage only → old zero behavior
+    assert _stream_usage(b'data: {"usage": not-json\n' + done) == (0, 0)  # malformed → silent
+    assert _stream_usage(b"") == (0, 0)
+
+
 async def test_default_models_coexist(stack):
     # max_loaded now defaults to 0 (GPU-bound), so loading a second model NO LONGER evicts the
     # first — they coexist. On the mock backend there's no GPU inventory to bound them, so both

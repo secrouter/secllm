@@ -97,7 +97,8 @@ def test_build_launch_command_metal_serves_mlx_repo_from_external_venv():
     assert cmd[:2] == ["/opt/vm/bin/vllm", "serve"]
     assert cmd[2] == "mlx-community/gpt-oss-20b-MXFP4-Q8"  # the MLX quant, not hf_model
     assert cmd[cmd.index("--served-model-name") + 1] == "gpt-oss-20b"
-    assert cmd[cmd.index("--max-model-len") + 1] == "8192"  # cfg.metal_max_model_len default
+    # _model() curates --max-model-len 32768 in vllm_args — the metal default honors it.
+    assert cmd[cmd.index("--max-model-len") + 1] == "32768"
     assert "--enforce-eager" in cmd
     # Per-worker unified-memory cap so co-resident models don't each grab ~90% and OOM.
     assert cmd[cmd.index("--gpu-memory-utilization") + 1] == "0.4"  # cfg.metal_mem_util default
@@ -108,6 +109,35 @@ def test_build_launch_command_metal_context_override_replaces_max_model_len():
     cmd = build_launch_command(cfg, _model(), port=12000, context_length=4096)
     assert cmd[cmd.index("--max-model-len") + 1] == "4096"
     assert cmd.count("--max-model-len") == 1  # overridden, not duplicated
+
+
+def test_build_launch_command_metal_default_prefers_catalog_vllm_args():
+    # The catalog's curated serving context (its vllm_args --max-model-len), NOT the flat
+    # global default — a Gemma curated for 32768 must not silently serve at 8192 (agent
+    # clients asking for 16k completions were getting vLLM 400s), and NOT model.context_length
+    # (262144 — the architectural max, which would OOM unified memory as a KV bound).
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
+    cmd = build_launch_command(
+        cfg, _model(vllm_args=["--max-model-len", "32768"], context_length=262144), port=12000)
+    assert cmd[cmd.index("--max-model-len") + 1] == "32768"
+
+
+def test_build_launch_command_metal_default_falls_back_to_cfg():
+    # A model whose vllm_args curate no --max-model-len keeps the pre-existing behavior:
+    # the global cfg.metal_max_model_len.
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
+    cmd = build_launch_command(
+        cfg, _model(vllm_args=["--tensor-parallel-size", "2"]), port=12000)
+    assert cmd[cmd.index("--max-model-len") + 1] == "8192"  # cfg.metal_max_model_len default
+
+
+def test_build_launch_command_metal_explicit_context_beats_catalog_value():
+    # An admin's explicit per-load override outranks the catalog's curated default too.
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
+    cmd = build_launch_command(
+        cfg, _model(vllm_args=["--max-model-len", "32768"]), port=12000, context_length=16384)
+    assert cmd[cmd.index("--max-model-len") + 1] == "16384"
+    assert cmd.count("--max-model-len") == 1
 
 
 def test_build_launch_command_metal_uses_per_model_vram_fraction():
