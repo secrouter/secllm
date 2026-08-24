@@ -42,6 +42,20 @@ def _vllm_args_with_context(model_args: list[str], context_length: int | None) -
     return args + ["--max-model-len", str(context_length)]
 
 
+def _catalog_max_model_len(model: Model) -> int | None:
+    """The ``--max-model-len`` value inside the catalog's own ``vllm_args`` for ``model`` —
+    ``None`` when the entry doesn't set one. The metal backend needs this because it composes
+    its own command instead of passing ``vllm_args`` through like the vllm path does: the
+    catalog value is the CURATED serving context (e.g. 32768 for Gemma), deliberately distinct
+    from ``model.context_length`` (the architectural max — 262144 for Gemma — which as a
+    KV-cache bound would OOM unified memory)."""
+    args = model.vllm_args
+    try:
+        return int(args[args.index("--max-model-len") + 1])
+    except (ValueError, IndexError):
+        return None
+
+
 def _tool_call_args(model: Model) -> list[str]:
     """vLLM flags to turn on server-side tool/function calling for ``model`` — BOTH
     ``--enable-auto-tool-choice`` and its model-specific ``--tool-call-parser`` (vLLM rejects a
@@ -72,9 +86,11 @@ def build_launch_command(
     """``context_length`` (tokens), when given, overrides the catalog's own context-length
     default for THIS load only — vLLM's ``--max-model-len`` or the mlx backend's own
     ``--max-context`` (see :mod:`secllm.backends.mlx_server`). ``None`` (the default) leaves
-    each backend at its catalog-configured default, unchanged from before this override
-    existed. The mock backend ignores it entirely — it does no real inference, so a context
-    cap is meaningless there.
+    each backend at its catalog-configured default: for vllm the ``vllm_args`` pass through
+    untouched; for metal the catalog's own ``--max-model-len`` (when its ``vllm_args`` set
+    one) is used, falling back to ``cfg.metal_max_model_len`` for models without one. The
+    mock backend ignores it entirely — it does no real inference, so a context cap is
+    meaningless there.
 
     ``memory_fraction`` (0..1), when given, is the per-GPU VRAM share the co-residency
     scheduler (see :mod:`secllm.gpu`) picked for this worker — passed to vLLM as
@@ -106,7 +122,12 @@ def build_launch_command(
             "--host", cfg.worker_host,
             "--port", str(port),
             "--served-model-name", model.id,
-            "--max-model-len", str(context_length or cfg.metal_max_model_len),
+            # Same context-default rule as the vllm path: an explicit override wins, else the
+            # catalog's curated --max-model-len (from the model's vllm_args), else the global
+            # metal default. Without the catalog value, agent clients asking for e.g. 16k
+            # completions against a model curated for 32768 got vLLM 400s at the flat 8192.
+            "--max-model-len",
+            str(context_length or _catalog_max_model_len(model) or cfg.metal_max_model_len),
             # Cap each worker's unified-memory reservation (vLLM pre-allocates its KV cache to this
             # fraction) so co-resident models don't each grab ~90% and OOM the machine. Per-model:
             # the catalog's own ``vram_fraction`` (right-sized for the model — a 3B needs far less

@@ -73,6 +73,18 @@ def _make_handler(model_id: str):
                 for word in reply.split(" "):
                     sse({"content": word + " "})
                 sse({}, finish="stop")
+                # Mirror vLLM: stream_options.include_usage adds ONE final chunk carrying the
+                # whole request's usage (no choices) before [DONE] — what the router parses to
+                # attribute streamed token load in /admin/api/stats.
+                if (req.get("stream_options") or {}).get("include_usage"):
+                    usage_chunk = {
+                        "id": "mock", "object": "chat.completion.chunk", "created": created,
+                        "model": model_id, "choices": [],
+                        "usage": {"prompt_tokens": len(prompt.split()),
+                                  "completion_tokens": len(reply.split()),
+                                  "total_tokens": len(prompt.split()) + len(reply.split())},
+                    }
+                    self.wfile.write(f"data: {json.dumps(usage_chunk)}\n\n".encode())
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
                 return

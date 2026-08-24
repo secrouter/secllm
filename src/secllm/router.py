@@ -31,6 +31,28 @@ def _usage(content: bytes) -> tuple[int, int]:
         return 0, 0
 
 
+def _stream_usage(tail: bytes) -> tuple[int, int]:
+    """(prompt_tokens, completion_tokens) from the TAIL of an SSE stream — when a client sends
+    ``stream_options: {"include_usage": true}`` (OpenAI SDKs do), vLLM emits the request's
+    whole-stream usage in one final ``data: {...}`` chunk just before ``data: [DONE]``.
+    Scanning only a bounded tail (see ``stream()``) keeps memory flat while still catching
+    that last chunk. Takes the LAST line carrying ``"usage"`` (delta chunks may echo a null
+    usage field) and best-effort → (0, 0) — the historical no-usage-for-streams behavior —
+    when absent or malformed (e.g. a line truncated at the tail's front edge)."""
+    pt = ct = 0
+    for line in tail.split(b"\n"):
+        line = line.strip()
+        if not line.startswith(b"data:") or b'"usage"' not in line:
+            continue
+        try:
+            u = json.loads(line[5:]).get("usage") or {}
+            pt = int(u.get("prompt_tokens", 0) or 0)
+            ct = int(u.get("completion_tokens", 0) or 0)
+        except (ValueError, AttributeError, TypeError):
+            continue
+    return pt, ct
+
+
 def build_router(ctx: Context) -> APIRouter:
     router = APIRouter()
 
@@ -50,15 +72,44 @@ def build_router(ctx: Context) -> APIRouter:
             return _error(401, "invalid or missing API token", "invalid_api_key")
         return None
 
+    def _served_context(model_id: str, worker_context: int) -> int | None:
+        """The context window this worker is actually serving, for the ``max_model_len``
+        field below: the per-load override when one was given, else the same catalog/
+        config default chain the launcher used (see ``backends.build_launch_command``).
+        ``None`` when it can't be determined — the field is then omitted rather than
+        guessed, since clients size their token budgets off it."""
+        if worker_context:
+            return worker_context
+        from .backends import _catalog_max_model_len
+
+        model = ctx.catalog.get(model_id)
+        catalog_len = _catalog_max_model_len(model) if model else None
+        if catalog_len:
+            return catalog_len
+        if ctx.config.backend == "metal":
+            return ctx.config.metal_max_model_len
+        return None
+
     @router.get("/v1/models")
     async def list_models(request: Request) -> JSONResponse:
         if (err := require_api_token(request)) is not None:
             return err
-        data = [
-            {"id": w.model_id, "object": "model", "created": int(w.started_at), "owned_by": "secllm"}
-            for w in ctx.supervisor.list()
-            if w.state == "healthy"
-        ]
+        # ``max_model_len`` mirrors vLLM's own /v1/models extension: clients (e.g. the
+        # secagent pi-guard preflight) read it to clamp their declared contextWindow to
+        # what the server will actually accept, instead of dying at the cap mid-session.
+        # The bare proxy payload used to strip it — that blinded the preflight entirely.
+        data = []
+        for w in ctx.supervisor.list():
+            if w.state != "healthy":
+                continue
+            entry: dict[str, object] = {
+                "id": w.model_id, "object": "model",
+                "created": int(w.started_at), "owned_by": "secllm",
+            }
+            served = _served_context(w.model_id, w.context_length)
+            if served:
+                entry["max_model_len"] = served
+            data.append(entry)
         return JSONResponse({"object": "list", "data": data})
 
     async def _proxy(request: Request, path: str) -> Response:
@@ -93,15 +144,23 @@ def build_router(ctx: Context) -> APIRouter:
         if payload.get("stream"):
             async def stream():
                 status = 200
+                # Rolling tail of the raw bytes (bounded, so a long stream never buffers whole):
+                # vLLM's final usage chunk arrives just before [DONE], and concatenating chunks
+                # here reassembles it even when a network boundary splits the line. 64 KiB is
+                # orders of magnitude more than that last chunk + [DONE] need.
+                tail = b""
                 try:
                     async with httpx.AsyncClient(timeout=None) as client:
                         async with client.stream("POST", url, content=body, headers=headers) as resp:
                             status = resp.status_code
                             async for chunk in resp.aiter_raw():
+                                tail = (tail + chunk)[-65536:]
                                 yield chunk
                 finally:
-                    # Recorded when the stream finishes; token usage isn't available mid-stream.
-                    track(status)
+                    # Recorded when the stream finishes; per-stream usage only exists if the
+                    # client asked for it (stream_options.include_usage) — else (0, 0) as before.
+                    ptoks, ctoks = _stream_usage(tail)
+                    track(status, ptoks, ctoks)
             return StreamingResponse(stream(), media_type="text/event-stream")
 
         async with httpx.AsyncClient(timeout=300) as client:

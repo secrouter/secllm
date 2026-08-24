@@ -47,7 +47,13 @@ class Model:
     # --override-generation-config, applied when a request omits the param. Lets a model that
     # garbles at its own default ship a saner one: the Gemma 4 26B 4-bit quant gives stray non-Latin
     # tokens inflated logits, so ANY temperature > 0 eventually samples them — {"temperature": 0.0}
-    # (greedy/argmax) is the only reliably clean default. Empty ({}) = leave the model's config alone.
+    # (greedy/argmax) is the only reliably clean default. Greedy decoding, in turn, is prone to
+    # repetition attractors in long agent loops (the model re-emits the IDENTICAL tool call after
+    # seeing its result, indefinitely — observed live: 6+ verbatim repeats of one grep until the
+    # context filled); a mild "repetition_penalty" (vLLM applies it over prompt+generated tokens)
+    # breaks the attractor without the temperature>0 garbling. Keep it mild (~1.1): strong values
+    # degrade legitimately-repetitive structured output (JSON keys, repeated symbol names).
+    # Empty ({}) = leave the model's config alone.
     sampling_override: dict[str, Any] = field(default_factory=dict)
 
     def repo_id(self, backend: str) -> str:
@@ -140,7 +146,7 @@ _BUILTIN = r"""
       "vram_fraction": 0.35,
       "vllm_args": ["--max-model-len", "32768"],
       "tool_call_parser": "gemma4",
-      "sampling_override": {"temperature": 0.0, "top_p": 0.9}
+      "sampling_override": {"temperature": 0.0, "top_p": 0.9, "repetition_penalty": 1.1}
     },
     {
       "id": "gpt-oss-20b",
