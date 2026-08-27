@@ -130,7 +130,7 @@ CONSOLE_HTML = r"""<!doctype html>
   </div>
   <span class="tag">model console</span>
   <span id="pill" class="pill">connecting…</span>
-  <button class="ghost theme-toggle" id="themeBtn" title="Toggle light / dark">DARK</button>
+  <button class="ghost theme-toggle" id="themeBtn" title="Toggle light / dark">◐</button>
 </header>
 <main>
   <section class="card">
@@ -268,10 +268,10 @@ window.act=act;
 // ── Theme (light / dark, follows OS by default, choice persisted) — matches the SecRouter
 // admin console's contract verbatim: attribute + localStorage key are frozen, do not rename.
 function effectiveTheme(){const a=document.documentElement.getAttribute("data-theme");if(a==="dark"||a==="light")return a;return(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light";}
-function setTheme(t){document.documentElement.setAttribute("data-theme",t);try{localStorage.setItem("secrouter-theme",t);}catch(e){}$("themeBtn").textContent=effectiveTheme()==="dark"?"LIGHT":"DARK";}
+/* The ◐ glyph is theme-neutral (secrecorder's toggle pattern) — no label swap needed. */
+function setTheme(t){document.documentElement.setAttribute("data-theme",t);try{localStorage.setItem("secrouter-theme",t);}catch(e){}}
 function toggleTheme(){setTheme(effectiveTheme()==="dark"?"light":"dark");}
 $("themeBtn").onclick=toggleTheme;
-$("themeBtn").textContent=effectiveTheme()==="dark"?"LIGHT":"DARK";
 loadAuth();loadHealth();refresh();
 setInterval(()=>{loadHealth();refresh();},4000);
 </script>
