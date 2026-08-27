@@ -22,6 +22,7 @@ def stack(request, tmp_path, monkeypatch):
         monkeypatch.setenv("SECLLM_API_TOKEN", api_token)
 
     from secllm.admin.api import build_router as admin_router
+    from secllm.audit import get_audit_logger
     from secllm.catalog import Catalog
     from secllm.config import Config
     from secllm.context import Context
@@ -37,7 +38,7 @@ def stack(request, tmp_path, monkeypatch):
     supervisor = Supervisor(cfg, catalog)
     health = HealthMonitor(cfg, supervisor)
     ctx = Context(config=cfg, catalog=catalog, supervisor=supervisor, health=health,
-                  downloads=Downloads(), stats=Stats())
+                  downloads=Downloads(), stats=Stats(), audit=get_audit_logger(cfg))
 
     app = FastAPI()
     app.include_router(openai_router(ctx))

@@ -7,52 +7,130 @@ CONSOLE_HTML = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>SecLLM — Model Console</title>
 <style>
+  /* "Field console" theme (SecRouter suite design language) — warm manila paper, olive drab,
+     oxide red. System fonts only (air-gap posture). */
   :root {
-    --bg:#0b0e12; --panel:#111620; --panel2:#0e131b; --line:#232c3a;
-    --ink:#d8e0ea; --dim:#8a97a8; --accent:#5b9bd5; --ok:#6bbf72; --warn:#e0b341; --bad:#e06c6c;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    /* light: warm manila "field console" */
+    --bg:#e7e3d8; --panel:#f3f0e8; --panel2:#fbfaf4; --fg:#211f18; --muted:#6c6552;
+    --accent:#4f6a2e; --accent-ink:#f6f3ea; --accent-soft:rgba(79,106,46,.18);
+    --ok:#2f5a22; --warn:#8a5a12; --bad:#8a2b1d;
+    --border:#cdc6b2; --rule:#dad4c2; --shadow:2px 2px 0 rgba(33,31,24,.06);
+    --pill-bg:#e2ddcd; --pill-ok-bg:#e3ebd7; --pill-ok-bd:#b9c9a8;
+    --pill-bad-bg:#f0ddd7; --pill-bad-bd:#d8b3aa; --pill-warn-bg:#efe6cf; --pill-warn-bd:#d8c69a;
+    --code-bg:#e2ddcd;
+  }
+  /* dark: warm "night ops" — same identity, charcoal + brighter olive/terracotta */
+  :root[data-theme="dark"] {
+    --bg:#171511; --panel:#201e17; --panel2:#29271e; --fg:#e8e3d3; --muted:#9a9077;
+    --accent:#94ad50; --accent-ink:#16140e; --accent-soft:rgba(148,173,80,.26);
+    --ok:#86b257; --warn:#cb9c3e; --bad:#d4634c;
+    --border:#3a3730; --rule:#272520; --shadow:2px 2px 0 rgba(0,0,0,.30);
+    --pill-bg:#2b2920; --pill-ok-bg:#26331c; --pill-ok-bd:#3f5230;
+    --pill-bad-bg:#37201a; --pill-bad-bd:#5c2f25; --pill-warn-bg:#332a17; --pill-warn-bd:#544321;
+    --code-bg:#2b2920;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:#171511; --panel:#201e17; --panel2:#29271e; --fg:#e8e3d3; --muted:#9a9077;
+      --accent:#94ad50; --accent-ink:#16140e; --accent-soft:rgba(148,173,80,.26);
+      --ok:#86b257; --warn:#cb9c3e; --bad:#d4634c;
+      --border:#3a3730; --rule:#272520; --shadow:2px 2px 0 rgba(0,0,0,.30);
+      --pill-bg:#2b2920; --pill-ok-bg:#26331c; --pill-ok-bd:#3f5230;
+      --pill-bad-bg:#37201a; --pill-bad-bd:#5c2f25; --pill-warn-bg:#332a17; --pill-warn-bd:#544321;
+      --code-bg:#2b2920;
+    }
   }
   * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink); font-family:var(--mono); font-size:14px; }
-  header { display:flex; align-items:center; gap:14px; padding:16px 22px; border-bottom:1px solid var(--line); background:var(--panel2); }
-  header h1 { font-size:16px; margin:0; letter-spacing:.5px; }
-  header .tag { color:var(--dim); font-size:12px; }
-  .pill { margin-left:auto; padding:3px 10px; border-radius:999px; font-size:12px; border:1px solid var(--line); color:var(--dim); }
-  .pill.ok { color:var(--ok); border-color:#2c4a30; } .pill.bad { color:var(--bad); border-color:#4a2a2a; }
+  body { margin:0; font:14px/1.55 var(--sans); background:var(--bg); color:var(--fg);
+         background-image:linear-gradient(var(--rule) 1px, transparent 1px); background-size:100% 28px; background-attachment:fixed; }
+  header { display:flex; align-items:center; gap:14px; padding:14px 22px; background:var(--panel);
+           border-bottom:1px solid var(--border); border-top:3px solid var(--accent); }
+  .brand { display:flex; align-items:center; gap:10px; }
+  .brand .logo-light, .brand .logo-dark { height:26px; width:auto; display:block; }
+  .brand .logo-dark { display:none; }
+  :root[data-theme="dark"] .brand .logo-light { display:none; }
+  :root[data-theme="dark"] .brand .logo-dark { display:block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .brand .logo-light { display:none; }
+    :root:not([data-theme="light"]) .brand .logo-dark { display:block; }
+  }
+  header h1 { font-size:15px; margin:0; font-weight:700; text-transform:uppercase; letter-spacing:.14em; }
+  header h1 .sec { color:var(--accent); }
+  header .tag { color:var(--muted); font:11px var(--mono); text-transform:uppercase; letter-spacing:.08em; }
+  .pill { margin-left:auto; display:inline-block; padding:3px 10px; border-radius:2px; font:11px var(--mono);
+          text-transform:uppercase; letter-spacing:.06em; background:var(--pill-bg); color:var(--muted); border:1px solid var(--border); }
+  .pill.ok { color:var(--ok); border-color:var(--pill-ok-bd); background:var(--pill-ok-bg); }
+  .pill.bad { color:var(--bad); border-color:var(--pill-bad-bd); background:var(--pill-bad-bg); }
+  .theme-toggle { padding:5px 11px; }
   main { max-width:960px; margin:0 auto; padding:22px; display:grid; gap:16px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 18px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:2px; padding:16px 18px;
+          box-shadow:var(--shadow); }
   .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-  input[type=password]{ background:var(--panel2); border:1px solid var(--line); color:var(--ink); padding:8px 10px; border-radius:6px; font-family:var(--mono); min-width:280px; }
-  input.ctx { background:var(--panel2); border:1px solid var(--line); color:var(--ink); padding:6px 8px; border-radius:6px; font-family:var(--mono); width:110px; font-size:12.5px; }
-  button { background:var(--accent); color:#0b0e12; border:0; padding:7px 13px; border-radius:6px; font-family:var(--mono); font-weight:600; cursor:pointer; }
-  button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
-  button.danger { background:transparent; color:var(--bad); border:1px solid #4a2a2a; }
+  input[type=password]{ background:var(--panel2); border:1px solid var(--border); color:var(--fg); padding:8px 10px; border-radius:2px; font-family:var(--mono); min-width:280px; }
+  input.ctx { background:var(--panel2); border:1px solid var(--border); color:var(--fg); padding:6px 8px; border-radius:2px; font-family:var(--mono); width:110px; font-size:12.5px; }
+  input[type=password]:focus, input.ctx:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft); }
+  button { background:var(--accent); color:var(--accent-ink); border:1px solid var(--accent); padding:7px 13px; border-radius:2px; font-family:var(--mono); font-weight:600; cursor:pointer;
+           text-transform:uppercase; letter-spacing:.06em; font-size:12px; }
+  button:hover { filter:brightness(1.08); }
+  button.ghost { background:var(--panel2); color:var(--fg); border-color:var(--border); }
+  button.danger { background:transparent; color:var(--bad); border:1px solid var(--pill-bad-bd); }
   button:disabled { opacity:.4; cursor:not-allowed; }
-  .model { display:grid; grid-template-columns:1fr auto; gap:8px 14px; padding:14px 0; border-bottom:1px solid var(--line); }
+  .model { display:grid; grid-template-columns:1fr auto; gap:8px 14px; padding:14px 0; border-bottom:1px solid var(--rule); }
   .model:last-child { border-bottom:0; }
-  .model h3 { margin:0; font-size:14px; }
-  .meta { color:var(--dim); font-size:12px; margin-top:3px; }
-  .desc { color:var(--ink); font-size:12.5px; margin-top:6px; }
-  .badge { padding:2px 8px; border-radius:4px; font-size:11px; border:1px solid var(--line); color:var(--dim); }
-  .badge.healthy { color:var(--ok); border-color:#2c4a30; } .badge.starting { color:var(--warn); border-color:#4a4020; }
-  .badge.unhealthy, .badge.error { color:var(--bad); border-color:#4a2a2a; }
-  .badge.cached { color:var(--ok); border-color:#2c4a30; } .badge.downloading { color:var(--warn); border-color:#4a4020; }
+  .model h3 { margin:0; font-size:14px; font-family:var(--sans); }
+  .meta { color:var(--muted); font:12px var(--mono); margin-top:3px; }
+  .desc { color:var(--fg); font-size:12.5px; margin-top:6px; }
+  .badge { padding:2px 8px; border-radius:2px; font:11px var(--mono); text-transform:uppercase; letter-spacing:.04em;
+           background:var(--pill-bg); border:1px solid var(--border); color:var(--muted); }
+  .badge.healthy { color:var(--ok); border-color:var(--pill-ok-bd); background:var(--pill-ok-bg); }
+  .badge.starting { color:var(--warn); border-color:var(--pill-warn-bd); background:var(--pill-warn-bg); }
+  .badge.unhealthy, .badge.error { color:var(--bad); border-color:var(--pill-bad-bd); background:var(--pill-bad-bg); }
+  .badge.cached { color:var(--ok); border-color:var(--pill-ok-bd); background:var(--pill-ok-bg); }
+  .badge.downloading { color:var(--warn); border-color:var(--pill-warn-bd); background:var(--pill-warn-bg); }
   .origin { color:var(--accent); }
   .actions { display:flex; gap:8px; align-items:flex-start; }
-  .hint { color:var(--dim); font-size:12px; margin-top:8px; }
-  code { color:var(--warn); }
-  .progress { display:inline-block; width:120px; height:8px; background:var(--panel2); border:1px solid var(--line); border-radius:999px; overflow:hidden; vertical-align:middle; }
+  .hint { color:var(--muted); font-size:12px; margin-top:8px; }
+  code { background:var(--code-bg); color:var(--fg); padding:1px 5px; border-radius:2px; font:12px var(--mono); }
+  .progress { display:inline-block; width:120px; height:8px; background:var(--panel2); border:1px solid var(--border); border-radius:999px; overflow:hidden; vertical-align:middle; }
   .progress .bar { height:100%; background:var(--accent); transition:width .4s ease; }
   .progress.indeterminate .bar { width:100% !important; opacity:.35; }
-  .pct { color:var(--dim); font-size:11px; margin-left:2px; }
-  .gpuinfo { color:var(--dim); font-size:12px; margin-top:6px; }
+  .pct { color:var(--muted); font-size:11px; margin-left:2px; }
+  .gpuinfo { color:var(--muted); font-size:12px; margin-top:6px; }
   .gpuinfo .card-chip { color:var(--accent); }
 </style>
+<script>
+  /* Apply the saved theme before first paint (no flash). Default = follow OS. */
+  (function(){ try { var t = localStorage.getItem('secrouter-theme'); if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t); } catch (e) {} })();
+</script>
 </head>
 <body>
 <header>
-  <h1>SecLLM</h1><span class="tag">model console</span>
+  <div class="brand">
+    <svg class="logo-light" viewBox="0 0 48 58" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g transform="translate(4,5)">
+        <polygon points="24,2 44,13 44,37 24,54 4,37 4,13" fill="none" stroke="#17140d" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M24 28 L24 14 M24 28 L14 38 M24 28 L34 38" stroke="#17140d" stroke-width="1.9"/>
+        <path d="M24 14 L14 38 M24 14 L34 38 M14 38 L34 38" stroke="#17140d" stroke-width="1.4" stroke-opacity="0.4"/>
+        <circle cx="24" cy="14" r="2.7" fill="#17140d"/><circle cx="14" cy="38" r="2.7" fill="#17140d"/><circle cx="34" cy="38" r="2.7" fill="#17140d"/>
+        <circle cx="24" cy="28" r="4.4" fill="#54672f"/>
+      </g>
+    </svg>
+    <svg class="logo-dark" viewBox="0 0 48 58" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <g transform="translate(4,5)">
+        <polygon points="24,2 44,13 44,37 24,54 4,37 4,13" fill="none" stroke="#f5f3ea" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M24 28 L24 14 M24 28 L14 38 M24 28 L34 38" stroke="#f5f3ea" stroke-width="1.9"/>
+        <path d="M24 14 L14 38 M24 14 L34 38 M14 38 L34 38" stroke="#f5f3ea" stroke-width="1.4" stroke-opacity="0.4"/>
+        <circle cx="24" cy="14" r="2.7" fill="#f5f3ea"/><circle cx="14" cy="38" r="2.7" fill="#f5f3ea"/><circle cx="34" cy="38" r="2.7" fill="#f5f3ea"/>
+        <circle cx="24" cy="28" r="4.4" fill="#cdd6a6"/>
+      </g>
+    </svg>
+    <h1><span class="sec">SEC</span>LLM</h1>
+  </div>
+  <span class="tag">model console</span>
   <span id="pill" class="pill">connecting…</span>
+  <button class="ghost theme-toggle" id="themeBtn" title="Toggle light / dark">DARK</button>
 </header>
 <main>
   <section class="card">
@@ -67,7 +145,7 @@ CONSOLE_HTML = r"""<!doctype html>
     <div class="hint">Load a model to serve it on SecLLM's OpenAI endpoint. Several models run <b>at once</b>, packed onto your GPUs by available VRAM — Load a new one and it coexists with the others (set <code>SECLLM_MAX_LOADED=1</code> if you instead want loading a model to <b>switch</b> by evicting the current one). When the GPUs are full a Load is refused rather than crowding a card. Point SecRouter at <code>http://&lt;host&gt;:11400/v1</code>. The context field overrides that model's default context length (tokens) for this load only — blank uses the catalog default. <b>Download</b> pre-fetches a model's weights without loading/serving it — useful for warming several models ahead of time; Load downloads automatically too if you skip this.</div>
   </section>
   <section class="card">
-    <h2 style="margin:0 0 8px; font-size:13px; text-transform:uppercase; letter-spacing:1px; color:var(--dim)">Models</h2>
+    <h2 style="margin:0 0 8px; font:11px var(--mono); text-transform:uppercase; letter-spacing:.12em; color:var(--muted)">Models</h2>
     <div id="models"><div class="hint">sign in with SecSSO, or connect with an admin token, to manage models</div></div>
   </section>
 </main>
@@ -187,6 +265,13 @@ $("connect").onclick=()=>{token=$("token").value.trim();localStorage.setItem("se
 $("signin").onclick=()=>{location.href="/auth/login?next=/admin";};
 $("signout").onclick=()=>{fetch("/auth/logout",{method:"POST",credentials:"same-origin"}).then(()=>location.reload());};
 window.act=act;
+// ── Theme (light / dark, follows OS by default, choice persisted) — matches the SecRouter
+// admin console's contract verbatim: attribute + localStorage key are frozen, do not rename.
+function effectiveTheme(){const a=document.documentElement.getAttribute("data-theme");if(a==="dark"||a==="light")return a;return(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light";}
+function setTheme(t){document.documentElement.setAttribute("data-theme",t);try{localStorage.setItem("secrouter-theme",t);}catch(e){}$("themeBtn").textContent=effectiveTheme()==="dark"?"LIGHT":"DARK";}
+function toggleTheme(){setTheme(effectiveTheme()==="dark"?"light":"dark");}
+$("themeBtn").onclick=toggleTheme;
+$("themeBtn").textContent=effectiveTheme()==="dark"?"LIGHT":"DARK";
 loadAuth();loadHealth();refresh();
 setInterval(()=>{loadHealth();refresh();},4000);
 </script>

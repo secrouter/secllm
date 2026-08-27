@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .audit import AuditLogger
 from .catalog import Catalog
 from .config import Config
 from .downloads import Downloads
@@ -20,3 +21,4 @@ class Context:
     health: HealthMonitor
     downloads: Downloads
     stats: Stats
+    audit: AuditLogger
