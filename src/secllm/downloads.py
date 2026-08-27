@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -154,11 +155,20 @@ class Downloads:
         elapsed = now - started_at if started_at else 0
         return downloaded / elapsed if elapsed > 0 and downloaded > 0 else None
 
-    def start(self, model_id: str, repo_id: str) -> DownloadState:
+    def start(
+        self, model_id: str, repo_id: str,
+        on_done: Callable[[str, bool, str], None] | None = None,
+    ) -> DownloadState:
         """Kick off a download for ``model_id`` (backed by ``repo_id``) if one isn't already
         in flight or already complete-and-cached. Idempotent: calling this again while a
         download is running just returns the current (in-progress) state rather than starting
-        a second, redundant download."""
+        a second, redundant download.
+
+        ``on_done``, if given, is called exactly once from the background thread when the
+        download finishes — ``(model_id, ok, error)`` — so a caller (the admin route) can audit
+        completion/failure without this module needing to know what auditing is. Not called at
+        all when ``start`` short-circuits because a download was already in flight (the
+        original caller's ``on_done`` — if any — still fires when that one finishes)."""
         with self._lock:
             existing = self._states.get(model_id)
             if existing and existing.status == "downloading":
@@ -181,11 +191,15 @@ class Downloads:
                 with self._lock:
                     state.status = "complete"
                     state.finished_at = time.time()
+                if on_done:
+                    on_done(model_id, True, "")
             except Exception as e:  # noqa: BLE001 — surfaced via status(), not raised here
                 with self._lock:
                     state.status = "error"
                     state.error = str(e)
                     state.finished_at = time.time()
+                if on_done:
+                    on_done(model_id, False, str(e))
 
         threading.Thread(target=_measure, daemon=True).start()
         threading.Thread(target=_run, daemon=True).start()

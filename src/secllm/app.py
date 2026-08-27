@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from . import auth
 from .admin.api import build_router as build_admin_router
+from .audit import get_audit_logger
 from .catalog import Catalog
 from .config import Config
 from .context import Context
@@ -29,8 +30,9 @@ def create_app(config: Config | None = None) -> FastAPI:
     health = HealthMonitor(config, supervisor)
     downloads = Downloads()
     stats = Stats()
+    audit = get_audit_logger(config)
     ctx = Context(config=config, catalog=catalog, supervisor=supervisor, health=health,
-                  downloads=downloads, stats=stats)
+                  downloads=downloads, stats=stats, audit=audit)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
