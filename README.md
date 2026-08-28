@@ -30,6 +30,12 @@ as a local, in-boundary provider. Part of the
   [Control Validation](docs/control-validation.md).
 - **US-origin catalog by default.** The shipped models are US-origin open weights (Meta,
   OpenAI gpt-oss), matching the suite's supply-chain posture; edit the catalog to add your own.
+- **Managed catalog, not just a file.** Hot-reload (`POST /admin/api/catalog/reload`) and
+  full CRUD (`GET`/`PUT`/`DELETE /admin/api/catalog/models/{id}`) from the console or API —
+  admin-gated, schema-validated, write-through (atomic, diff-friendly) to `models.json`, and
+  audited. Models already loaded keep running through a reload; only future loads see the new
+  entries. Optionally pin a model to an exact HF commit/tag (`revision`) for reproducible,
+  supply-chain-reviewed weights — the model analogue of `suite.toml` pinning.
 
 ## Requirements
 
@@ -91,6 +97,15 @@ catalog across them? See [docs/deploy.md](docs/deploy.md#running-multiple-instan
 
 Add any model you like — PRC-jurisdiction models (Qwen/DeepSeek/…) are simply excluded from
 the shipped defaults, consistent with SecRouter's posture.
+
+Manage the catalog live instead of hand-editing the file: the console's **Catalog** card (or
+`GET`/`PUT`/`DELETE /admin/api/catalog/models/{id}`) adds, edits, and removes entries with
+schema validation and an audited write-through to `models.json`; `POST
+/admin/api/catalog/reload` re-reads the file and hot-swaps it in without disturbing already-
+loaded models. The built-in catalog is read-only (mutations 409 — set `SECLLM_CATALOG` first).
+Pin a model to an exact Hugging Face commit or tag with `revision` for reproducible,
+supply-chain-reviewed weights (the model-weights analogue of `suite.toml` pinning) — see
+[docs/configuration.md](docs/configuration.md#the-model-catalog).
 
 ## Documentation
 

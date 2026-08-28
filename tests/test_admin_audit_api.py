@@ -135,7 +135,14 @@ async def test_evidence_bundle_shape_and_no_secrets_leaked(stack):
     assert ("AU", "3.3.1") in control_ids
     assert ("AU", "3.3.8") in control_ids
     assert ("IA", "3.5.2") in control_ids
+    assert ("CM", "3.4.3") in control_ids  # catalog change control (audited CRUD + pinning)
     assert any(c_["id"] == "delegation" for c_ in body["controls"])
+
+    # catalog change-control posture: source, size, pinned-vs-floating counts (Model.revision)
+    assert body["config"]["catalog_entry_count"] == len(ctx.catalog.models)
+    assert body["config"]["catalog_pinned_count"] == 0  # builtin catalog ships unpinned today
+    assert body["config"]["catalog_floating_count"] == len(ctx.catalog.models)
+    assert body["config"]["catalog_built_in"] is True
 
     # the admin token (the actual bearer credential used above) must never appear anywhere
     dump = json.dumps(body)

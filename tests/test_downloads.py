@@ -207,6 +207,104 @@ def test_start_populates_total_bytes_from_hf_api(monkeypatch):
     assert d.status("Llama-3.2-3B-Instruct").total_bytes == 600
 
 
+def test_resolve_commit_hash_is_the_snapshot_dir_basename():
+    # Under HF Hub's default cache layout, snapshot_download's return value is the local
+    # snapshot dir, named by the resolved commit hash — no extra network call needed.
+    path = "/fake/cache/models--org--repo/snapshots/deadbeef1234"
+    assert dl._resolve_commit_hash(path) == "deadbeef1234"
+
+
+# ---- revision threading (pinning) ---------------------------------------------------------
+
+
+def test_start_passes_revision_through_to_snapshot_download(monkeypatch):
+    captured = {}
+
+    def fake_snapshot_download(repo_id, **kwargs):
+        captured.update(kwargs)
+        return "/fake/cache/models--org--repo/snapshots/abc123"
+
+    monkeypatch.setattr(dl, "snapshot_download", fake_snapshot_download)
+    d = dl.Downloads()
+    d.start("m1", "org/repo", revision="v1.0")
+    for _ in range(50):
+        if d.status("m1").status != "downloading":
+            break
+        time.sleep(0.02)
+    assert captured["revision"] == "v1.0"
+
+
+def test_start_none_revision_is_backward_compatible(monkeypatch):
+    captured = {}
+
+    def fake_snapshot_download(repo_id, **kwargs):
+        captured.update(kwargs)
+        return "/fake/path"
+
+    monkeypatch.setattr(dl, "snapshot_download", fake_snapshot_download)
+    d = dl.Downloads()
+    d.start("m1", "org/repo")
+    for _ in range(50):
+        if d.status("m1").status != "downloading":
+            break
+        time.sleep(0.02)
+    assert captured["revision"] is None
+
+
+def test_on_done_receives_resolved_revision_on_success(monkeypatch):
+    monkeypatch.setattr(
+        dl, "snapshot_download",
+        lambda *a, **k: "/fake/cache/models--org--repo/snapshots/resolvedsha",
+    )
+    calls = []
+    d = dl.Downloads()
+    d.start("m1", "org/repo", revision="main", on_done=lambda *args: calls.append(args))
+    for _ in range(50):
+        if calls:
+            break
+        time.sleep(0.02)
+    assert calls == [("m1", True, "", "resolvedsha")]
+
+
+def test_on_done_receives_empty_resolved_revision_on_failure(monkeypatch):
+    monkeypatch.setattr(dl, "snapshot_download", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    calls = []
+    d = dl.Downloads()
+    d.start("m1", "org/repo", on_done=lambda *args: calls.append(args))
+    for _ in range(50):
+        if calls:
+            break
+        time.sleep(0.02)
+    assert len(calls) == 1
+    mid, ok, error, resolved = calls[0]
+    assert (mid, ok, resolved) == ("m1", False, "")
+    assert "boom" in error
+
+
+def test_is_cached_passes_revision_through(monkeypatch):
+    captured = {}
+
+    def fake_snapshot_download(repo_id, **kwargs):
+        captured.update(kwargs)
+        return "/fake/path"
+
+    monkeypatch.setattr(dl, "snapshot_download", fake_snapshot_download)
+    dl.is_cached("org/repo", revision="v2")
+    assert captured["revision"] == "v2"
+
+
+def test_is_cached_revision_none_is_backward_compatible(monkeypatch):
+    captured = {}
+
+    def fake_snapshot_download(repo_id, **kwargs):
+        captured.update(kwargs)
+        return "/fake/path"
+
+    monkeypatch.setattr(dl, "snapshot_download", fake_snapshot_download)
+    dl.is_cached("org/repo")
+    assert captured["revision"] is None
+
+
 def test_start_total_bytes_is_best_effort_on_hf_failure(monkeypatch):
     # If the HF metadata lookup raises, the download itself must still complete — total_bytes
     # just stays 0 (percent unknown), never an error.

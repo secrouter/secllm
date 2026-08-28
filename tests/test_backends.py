@@ -187,3 +187,55 @@ def test_build_launch_command_vllm_sampling_override_passed():
         _cfg("vllm"), _model(sampling_override={"temperature": 0.3}), port=12000)
     got = _json.loads(cmd[cmd.index("--override-generation-config") + 1])
     assert got == {"temperature": 0.3}
+
+
+# ---- revision pinning ---------------------------------------------------------------------
+
+
+def test_build_launch_command_vllm_passes_revision_when_pinned():
+    cmd = build_launch_command(_cfg("vllm"), _model(revision="deadbeef"), port=12000)
+    assert cmd[cmd.index("--revision") + 1] == "deadbeef"
+
+
+def test_build_launch_command_vllm_omits_revision_when_unpinned():
+    cmd = build_launch_command(_cfg("vllm"), _model(revision=None), port=12000)
+    assert "--revision" not in cmd
+
+
+def test_build_launch_command_metal_passes_revision_when_pinned():
+    cfg = replace(_cfg("metal"), metal_venv="/opt/vm")
+    cmd = build_launch_command(cfg, _model(revision="v1.2.3"), port=12000)
+    assert cmd[cmd.index("--revision") + 1] == "v1.2.3"
+
+
+def test_build_launch_command_mlx_passes_revision_when_pinned():
+    cmd = build_launch_command(_cfg("mlx"), _model(revision="abc"), port=12000)
+    assert cmd[cmd.index("--revision") + 1] == "abc"
+
+
+def test_build_launch_command_mlx_omits_revision_when_unpinned():
+    cmd = build_launch_command(_cfg("mlx"), _model(revision=None), port=12000)
+    assert "--revision" not in cmd
+
+
+def test_build_launch_command_mock_cannot_pin_and_warns_once(monkeypatch, caplog):
+    from secllm import backends as backends_mod
+    monkeypatch.setattr(backends_mod, "_warned_no_revision_pin", set())
+    with caplog.at_level("WARNING", logger="secllm.backends"):
+        cmd = build_launch_command(_cfg("mock"), _model(revision="pinned"), port=12000)
+    assert "--revision" not in cmd  # mock does no real download — nothing to pin
+    assert any("cannot pin" in r.message for r in caplog.records)
+
+    # Second call for the SAME backend must not warn again (once per process, not per load).
+    caplog.clear()
+    with caplog.at_level("WARNING", logger="secllm.backends"):
+        build_launch_command(_cfg("mock"), _model(revision="pinned"), port=12001)
+    assert not any("cannot pin" in r.message for r in caplog.records)
+
+
+def test_build_launch_command_mock_no_warning_when_unpinned(monkeypatch, caplog):
+    from secllm import backends as backends_mod
+    monkeypatch.setattr(backends_mod, "_warned_no_revision_pin", set())
+    with caplog.at_level("WARNING", logger="secllm.backends"):
+        build_launch_command(_cfg("mock"), _model(revision=None), port=12000)
+    assert not any("cannot pin" in r.message for r in caplog.records)

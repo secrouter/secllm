@@ -34,7 +34,10 @@ def stack(request, tmp_path, monkeypatch):
 
     cfg = Config.from_env()
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
-    catalog = Catalog.load()
+    # Honor SECLLM_CATALOG when a test sets it (e.g. to exercise catalog CRUD/write-through
+    # against a real file) — matches app.py's own create_app() wiring. Unset (the default,
+    # every pre-existing test) behaves exactly as before: the built-in catalog.
+    catalog = Catalog.load(cfg.catalog_path or None)
     supervisor = Supervisor(cfg, catalog)
     health = HealthMonitor(cfg, supervisor)
     ctx = Context(config=cfg, catalog=catalog, supervisor=supervisor, health=health,

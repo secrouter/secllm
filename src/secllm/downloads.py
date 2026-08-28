@@ -24,26 +24,50 @@ from huggingface_hub.constants import HF_HUB_CACHE
 _ESSENTIAL_PATTERNS = ["*.json", "*.safetensors", "*.bin", "*.model", "tokenizer*"]
 
 
-def is_cached(repo_id: str) -> bool:
+def is_cached(repo_id: str, revision: str | None = None) -> bool:
     """Whether ``repo_id``'s essential files are already present in the local HF cache —
     checked WITHOUT any network access (``local_files_only=True``), so this is cheap enough to
-    call on every ``GET /admin/api/models``."""
+    call on every ``GET /admin/api/models``.
+
+    Revision-aware at no extra cost: ``huggingface_hub`` resolves ``revision`` against the
+    local cache the exact same way it resolves it for a real download, so a model cached at a
+    DIFFERENT commit than the one now pinned correctly reads as not-cached (forcing a fresh
+    pinned-weights fetch) rather than a stale false positive. ``None`` (the default — no pin)
+    is identical to the pre-revision behavior: resolves the repo's default branch."""
     try:
-        snapshot_download(repo_id, local_files_only=True, allow_patterns=_ESSENTIAL_PATTERNS)
+        snapshot_download(repo_id, revision=revision, local_files_only=True,
+                           allow_patterns=_ESSENTIAL_PATTERNS)
         return True
     except Exception:  # noqa: BLE001 — any failure (not cached, incomplete, bad repo) means no
         return False
 
 
-def _repo_total_bytes(repo_id: str) -> int:
-    """Total on-Hub size (bytes) of ``repo_id``'s files, for a download progress denominator.
-    Best-effort: any failure (offline, gated repo, transient error) returns 0, which the
-    progress view reads as "total unknown" (percent ``None``) — never a download failure."""
+def _repo_total_bytes(repo_id: str, revision: str | None = None) -> int:
+    """Total on-Hub size (bytes) of ``repo_id``'s files at ``revision``, for a download progress
+    denominator. Best-effort: any failure (offline, gated repo, transient error) returns 0,
+    which the progress view reads as "total unknown" (percent ``None``) — never a download
+    failure."""
     try:
-        info = HfApi().model_info(repo_id, files_metadata=True)
+        info = HfApi().model_info(repo_id, revision=revision, files_metadata=True)
         return sum(int(s.size or 0) for s in (info.siblings or []))
     except Exception:  # noqa: BLE001 — progress is decorative; never let it break a download
         return 0
+
+
+def _resolve_commit_hash(local_path: str) -> str:
+    """The exact commit hash ``snapshot_download`` actually materialized on disk. Free (no
+    extra network round-trip): under HF Hub's default cache layout, the path it RETURNS is the
+    local snapshot directory, named by the resolved commit hash
+    (``<cache>/models--org--name/snapshots/<hash>/``) — so whatever ``revision`` was requested
+    (a floating tag/branch, or already a hash), this is the PRECISE commit it resolved to at
+    download time. Recorded in the ``model.download`` audit event so even a floating tag's
+    audit trail still pins something reproducible. Falls back to "" (best-effort; never breaks
+    a download) if the path is ever empty/unusual — e.g. a future caller using ``local_dir=``,
+    which this module doesn't do today."""
+    try:
+        return Path(local_path).name
+    except Exception:  # noqa: BLE001 — audit metadata is best-effort
+        return ""
 
 
 def _cache_blobs_bytes(repo_id: str) -> int:
@@ -157,18 +181,24 @@ class Downloads:
 
     def start(
         self, model_id: str, repo_id: str,
-        on_done: Callable[[str, bool, str], None] | None = None,
+        on_done: Callable[[str, bool, str, str], None] | None = None,
+        revision: str | None = None,
     ) -> DownloadState:
-        """Kick off a download for ``model_id`` (backed by ``repo_id``) if one isn't already
-        in flight or already complete-and-cached. Idempotent: calling this again while a
-        download is running just returns the current (in-progress) state rather than starting
-        a second, redundant download.
+        """Kick off a download for ``model_id`` (backed by ``repo_id``, optionally pinned to
+        ``revision`` — a commit hash or tag; ``None`` floats to the repo's default branch,
+        exactly as before this parameter existed) if one isn't already in flight or already
+        complete-and-cached. Idempotent: calling this again while a download is running just
+        returns the current (in-progress) state rather than starting a second, redundant
+        download.
 
         ``on_done``, if given, is called exactly once from the background thread when the
-        download finishes — ``(model_id, ok, error)`` — so a caller (the admin route) can audit
-        completion/failure without this module needing to know what auditing is. Not called at
-        all when ``start`` short-circuits because a download was already in flight (the
-        original caller's ``on_done`` — if any — still fires when that one finishes)."""
+        download finishes — ``(model_id, ok, error, resolved_revision)`` — so a caller (the
+        admin route) can audit completion/failure (with the EXACT commit the download actually
+        landed at, see :func:`_resolve_commit_hash`) without this module needing to know what
+        auditing is. ``resolved_revision`` is ``""`` on failure or if resolution itself failed.
+        Not called at all when ``start`` short-circuits because a download was already in
+        flight (the original caller's ``on_done`` — if any — still fires when that one
+        finishes)."""
         with self._lock:
             existing = self._states.get(model_id)
             if existing and existing.status == "downloading":
@@ -180,26 +210,27 @@ class Downloads:
             # Best-effort progress denominator, on its OWN daemon thread so a slow/hanging HF
             # metadata call can never delay the download's status transitions below (and, being
             # a daemon, never blocks shutdown). 0 on failure → percent just stays unknown.
-            total = _repo_total_bytes(repo_id)
+            total = _repo_total_bytes(repo_id, revision)
             if total:
                 with self._lock:
                     state.total_bytes = total
 
         def _run() -> None:
             try:
-                snapshot_download(repo_id)
+                local_path = snapshot_download(repo_id, revision=revision)
+                resolved = _resolve_commit_hash(local_path)
                 with self._lock:
                     state.status = "complete"
                     state.finished_at = time.time()
                 if on_done:
-                    on_done(model_id, True, "")
+                    on_done(model_id, True, "", resolved)
             except Exception as e:  # noqa: BLE001 — surfaced via status(), not raised here
                 with self._lock:
                     state.status = "error"
                     state.error = str(e)
                     state.finished_at = time.time()
                 if on_done:
-                    on_done(model_id, False, str(e))
+                    on_done(model_id, False, str(e), "")
 
         threading.Thread(target=_measure, daemon=True).start()
         threading.Thread(target=_run, daemon=True).start()

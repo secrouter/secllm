@@ -84,6 +84,28 @@ credential, regardless of SSO configuration.
 ## The model catalog
 
 `SECLLM_CATALOG` points at a `models.json` (see `models.example.json`); each entry can set
-its own `vram_fraction`, `context_length`, `mlx_model` (MLX-format repo id), `vllm_args`, and
-tool-call parser — see the README's catalog table and `src/secllm/catalog.py` for the full
-schema.
+its own `vram_fraction`, `context_length`, `mlx_model` (MLX-format repo id), `vllm_args`,
+tool-call parser, and `revision` — see the README's catalog table and `src/secllm/catalog.py`
+for the full schema (`validate()` is the single source of truth for what's required/allowed;
+unknown keys are rejected fail-loud).
+
+**Revision pinning.** `revision` (a Hugging Face commit hash or tag) pins the exact weights
+fetched and served for that model — the model-weights analogue of the suite's `suite.toml`
+dependency pinning: a fixed, supply-chain-reviewed set of weights instead of "whatever the
+repo's default branch currently points at". Omitted (the default) floats, exactly as before
+this field existed. Threaded through the download (`snapshot_download(..., revision=...)`,
+with the *resolved* commit hash recorded in the `model.download` audit event even for a
+floating tag), the local cache check, and the backend launch command (`vllm serve --revision`
+for the `vllm`/`metal` backends; the `mlx` backend's own `--revision` CLI flag). The `mock`
+backend can't pin anything (no real download happens) and logs a warning if asked to.
+
+**Hot-reload and CRUD.** `POST /admin/api/catalog/reload` re-reads `SECLLM_CATALOG` (or the
+built-in catalog) from disk and atomically swaps it in — models already loaded keep running at
+their launch-time settings; only a *future* load/reload sees the new entries, and a model whose
+entry disappeared stays up but is flagged `orphaned: true` in `GET /admin/api/models`.
+`GET /admin/api/catalog`, `PUT /admin/api/catalog/models/{id}` (upsert), and
+`DELETE /admin/api/catalog/models/{id}` manage the file itself — admin-gated, schema-validated,
+write-through (atomic, formatting-preserving) to `SECLLM_CATALOG`, and audited
+(`catalog.reload` / `catalog.changed`, the latter with a field-name-only diff — never full
+entry values). All of this 409s when the running catalog is the **built-in** one — SecLLM never
+silently materializes a `models.json` on an operator's behalf; set `SECLLM_CATALOG` first.

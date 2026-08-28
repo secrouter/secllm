@@ -208,7 +208,8 @@ async def test_admin_gating(stack):
 
 async def test_admin_api_models_reports_cache_and_download_status(stack, monkeypatch):
     app, ctx = stack
-    monkeypatch.setattr("secllm.admin.api.is_cached", lambda repo_id: repo_id == "cached/repo")
+    monkeypatch.setattr("secllm.admin.api.is_cached",
+                         lambda repo_id, revision=None: repo_id == "cached/repo")
     monkeypatch.setattr(ctx.catalog.models["Llama-3.2-3B-Instruct"], "hf_model", "cached/repo")
     async with _client(app) as c:
         r = await c.get("/admin/api/models", headers=ADMIN)
