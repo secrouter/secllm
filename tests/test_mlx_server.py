@@ -76,3 +76,32 @@ def test_generate_leaves_max_tokens_alone_when_uncapped(monkeypatch):
         req={"max_tokens": 500}, max_context=0,
     ))
     assert calls["max_tokens"] == 500
+
+
+# ---- revision pinning (_load_pinned) --------------------------------------------------------
+
+
+def test_load_pinned_no_revision_calls_plain_load(monkeypatch):
+    calls = []
+    monkeypatch.setattr(mlx_server, "load", lambda *a, **k: calls.append((a, k)) or ("m", "t"))
+    result = mlx_server._load_pinned("org/repo", None)
+    assert result == ("m", "t")
+    assert calls == [(("org/repo",), {})]
+
+
+def test_load_pinned_with_revision_passes_it_when_supported(monkeypatch):
+    def fake_load(hf_model, revision=None):
+        return (hf_model, revision)
+
+    monkeypatch.setattr(mlx_server, "load", fake_load)
+    assert mlx_server._load_pinned("org/repo", "deadbeef") == ("org/repo", "deadbeef")
+
+
+def test_load_pinned_falls_back_and_warns_when_revision_unsupported(monkeypatch, capsys):
+    def fake_load(hf_model):  # no revision= parameter at all — older mlx_lm
+        return (hf_model,)
+
+    monkeypatch.setattr(mlx_server, "load", fake_load)
+    result = mlx_server._load_pinned("org/repo", "deadbeef")
+    assert result == ("org/repo",)  # loaded unpinned, not raised
+    assert "revision" in capsys.readouterr().err.lower()

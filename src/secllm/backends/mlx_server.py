@@ -31,12 +31,33 @@ prompt's token count fits, and :func:`_generate` additionally clamps ``max_token
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from mlx_lm import load, stream_generate
 from mlx_lm.sample_utils import make_sampler
+
+
+def _load_pinned(hf_model: str, revision: str | None):
+    """``mlx_lm.load`` a model, pinning ``revision`` (an HF commit hash or tag) when given and
+    the installed ``mlx_lm`` supports it. ``revision=None`` (the default) is a plain
+    ``load(hf_model)`` — unchanged from before this parameter existed: floats to the repo's
+    default branch. Checked via ``inspect.signature`` rather than just trying and catching
+    ``TypeError`` — ``load()`` can raise its OWN ``TypeError`` for unrelated reasons (a bad
+    model repo, e.g.), which we must not misreport as "this mlx_lm can't pin revisions"."""
+    if not revision:
+        return load(hf_model)
+    if "revision" in inspect.signature(load).parameters:
+        return load(hf_model, revision=revision)
+    print(
+        f"WARNING: installed mlx_lm has no revision= support in load() — loading "
+        f"{hf_model!r} UNPINNED (floating), ignoring requested revision {revision!r}",
+        file=sys.stderr,
+    )
+    return load(hf_model)
 
 DEFAULT_MAX_TOKENS = 1024
 
@@ -199,10 +220,14 @@ def main() -> None:
     ap.add_argument("--max-context", type=int, default=0,
                      help="cap on prompt+completion tokens; 0 (default) = no cap. MLX has no "
                           "native flag for this — enforced in-process (see module docstring).")
+    ap.add_argument("--revision", default=None,
+                     help="HF commit hash or tag to pin; unset (default) floats to the repo's "
+                          "default branch. Best-effort — falls back to unpinned with a stderr "
+                          "warning if the installed mlx_lm has no revision= support.")
     args = ap.parse_args()
     # Blocking, on purpose — see module docstring: nothing listens until this returns, and
     # everything after runs single-threaded on this same thread (MLX's stream is thread-local).
-    model, tokenizer = load(args.hf_model)
+    model, tokenizer = _load_pinned(args.hf_model, args.revision)
     HTTPServer(
         (args.host, args.port), _make_handler(model, tokenizer, args.model, args.max_context)
     ).serve_forever()

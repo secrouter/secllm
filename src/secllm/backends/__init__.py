@@ -15,6 +15,7 @@ endpoint, so the supervisor, health monitor, and router treat them identically:
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -22,6 +23,24 @@ from ..catalog import Model
 from ..config import Config
 
 HEALTH_PATH = "/health"
+
+_log = logging.getLogger("secllm.backends")
+# Backends we've already warned about (once per process, not once per model/load — a warning
+# on every single load of every model would just be noise an operator tunes out).
+_warned_no_revision_pin: set[str] = set()
+
+
+def _warn_if_backend_cannot_pin(backend: str, model: Model) -> None:
+    """The ``mock`` backend does no real download or inference at all — there's no actual
+    weights fetch to pin, so a ``model.revision`` set on a mock-served model is silently a
+    no-op otherwise. Warn once per backend per process so an operator relying on revision
+    pinning for supply-chain review notices, rather than assuming it's honored everywhere."""
+    if model.revision and backend not in _warned_no_revision_pin:
+        _warned_no_revision_pin.add(backend)
+        _log.warning(
+            "backend=%s cannot pin a model revision (no real download/inference happens "
+            "here) — revision %r on model %r is ignored", backend, model.revision, model.id,
+        )
 
 
 def worker_base_url(host: str, port: int) -> str:
@@ -96,8 +115,15 @@ def build_launch_command(
     scheduler (see :mod:`secllm.gpu`) picked for this worker — passed to vLLM as
     ``--gpu-memory-utilization`` so two models on one card don't each grab the global default
     and OOM it. ``None`` (unmanaged host / no GPU inventory) keeps ``cfg.gpu_memory_utilization``,
-    exactly as before. Only the vLLM path uses it; mlx and mock ignore it."""
+    exactly as before. Only the vLLM path uses it; mlx and mock ignore it.
+
+    ``model.revision``, when set, pins the exact HF commit/tag every real-inference backend
+    loads (vLLM's own ``--revision``, honored by both the ``vllm`` and ``metal`` paths since
+    both run ``vllm serve``; the ``mlx`` backend's own ``--revision`` — see
+    :mod:`secllm.backends.mlx_server`). The ``mock`` backend can't pin anything (no real
+    download happens) — see :func:`_warn_if_backend_cannot_pin`."""
     if cfg.backend == "mock":
+        _warn_if_backend_cannot_pin(cfg.backend, model)
         return [
             sys.executable, "-m", "secllm.backends.mock_server",
             "--host", cfg.worker_host, "--port", str(port), "--model", model.id,
@@ -110,6 +136,8 @@ def build_launch_command(
         ]
         if context_length is not None:
             cmd += ["--max-context", str(context_length)]
+        if model.revision:
+            cmd += ["--revision", model.revision]
         return cmd
     if cfg.backend == "metal":
         # vLLM's own OpenAI server, run from the external vllm-metal venv (separate 3.12
@@ -137,6 +165,8 @@ def build_launch_command(
             str(memory_fraction or model.vram_fraction or cfg.metal_mem_util),
             "--enforce-eager",
         ]
+        if model.revision:
+            cmd += ["--revision", model.revision]
         return cmd + _tool_call_args(model) + _sampling_args(model)
     # vLLM: expose the friendly catalog id as the served model name.
     cmd = [
@@ -146,5 +176,7 @@ def build_launch_command(
         "--served-model-name", model.id,
         "--gpu-memory-utilization", str(memory_fraction or cfg.gpu_memory_utilization),
     ]
+    if model.revision:
+        cmd += ["--revision", model.revision]
     return (cmd + _vllm_args_with_context(model.vllm_args, context_length)
             + _tool_call_args(model) + _sampling_args(model) + list(cfg.vllm_extra_args))

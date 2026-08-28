@@ -38,7 +38,8 @@ Status legend: ✅ enforced in code · 🤝 shared (needs enclave/process) · �
 
 | Family | ID | Requirement | Implementation (file:function) | Evidence command |
 |---|---|---|---|---|
-| CM | 3.4.6 | Least functionality | `/v1/*` carries no admin capability; admin mutation routes are a small, fixed, documented set (load/unload/reload/download) — no arbitrary config-write endpoint exists | `src/secllm/admin/api.py` `build_router` |
+| CM | 3.4.6 | Least functionality | `/v1/*` carries no admin capability; admin mutation routes are a small, fixed, documented set (load/unload/reload/download/catalog CRUD) — no arbitrary config-write endpoint exists | `src/secllm/admin/api.py` `build_router` |
+| CM | 3.4.3 | Track, review, approve/disapprove, and log changes to organizational systems | Catalog CRUD (`PUT`/`DELETE /admin/api/catalog/models/{id}`) is admin-gated, schema-validated (`src/secllm/catalog.py` `validate()`), write-through to `SECLLM_CATALOG` (atomic tmp+rename, formatting-preserving), hot-swapped in memory, and audited with a field-name-only diff (`catalog.changed`); `POST /admin/api/catalog/reload` re-reads the file and logs `catalog.reload` with added/removed/changed ids. Model weights themselves can be pinned to an exact HF commit (`Model.revision`) — the model-weights analogue of the suite's `suite.toml` dependency pinning | `src/secllm/catalog.py` `validate`, `Catalog.load`, `Catalog.swap_in_place`; `src/secllm/admin/api.py` catalog routes |
 
 ## Evidence bundle
 
@@ -79,4 +80,8 @@ curl -H "Authorization: Bearer $SECLLM_ADMIN_TOKEN" http://localhost:11400/admin
 # Full evidence bundle for an SSP package
 curl -H "Authorization: Bearer $SECLLM_ADMIN_TOKEN" http://localhost:11400/admin/api/evidence \
   -o secllm-evidence-$(date +%F).json
+
+# Catalog change history (CM 3.4.3) — requires SECLLM_CATALOG (409 on the built-in catalog)
+curl -H "Authorization: Bearer $SECLLM_ADMIN_TOKEN" \
+  "http://localhost:11400/admin/api/audit?type=catalog.changed"
 ```
