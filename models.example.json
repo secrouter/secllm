@@ -1,34 +1,43 @@
 {
-  "_note": "SecLLM model catalog. Default set is US-origin open-weight models (SecRouter supply-chain posture). Copy to models.json, edit, and point SECLLM_CATALOG at it. Add any model you like — PRC-jurisdiction models are simply excluded from the shipped defaults.",
+  "_note": "SecLLM model catalog. Default set is US-origin open-weight models (SecRouter supply-chain posture). Copy to models.json, edit, and point SECLLM_CATALOG at it. Add any model you like — PRC-jurisdiction models are simply excluded from the shipped defaults. This file mirrors the built-in catalog (src/secllm/catalog.py) plus one extra example entry (Llama-3.1-8B).",
   "models": [
     {
       "id": "Llama-3.2-3B-Instruct",
       "name": "Llama 3.2 3B Instruct",
       "description": "Small Meta model; low latency for simple tasks.",
       "hf_model": "meta-llama/Llama-3.2-3B-Instruct",
+      "mlx_model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
       "origin": "US (Meta)",
       "size_class": "small",
       "context_length": 16384,
-      "vllm_args": ["--max-model-len", "16384"]
+      "vram_fraction": 0.15,
+      "vllm_args": ["--max-model-len", "16384"],
+      "tool_call_parser": "llama3_json"
     },
     {
-      "id": "Llama-3.1-8B-Instruct",
-      "name": "Llama 3.1 8B Instruct",
-      "description": "General-purpose 8B; solid quality at moderate GPU cost.",
-      "hf_model": "meta-llama/Llama-3.1-8B-Instruct",
-      "origin": "US (Meta)",
+      "id": "gemma-4-26B-A4B-it",
+      "name": "Gemma 4 26B (A4B MoE)",
+      "description": "Google's mixture-of-experts (4B active of 26B total); high-throughput reasoning at a fraction of the dense per-token cost. (The 12B is a unified multimodal checkpoint that doesn't serve as text, so this is the 26B.)",
+      "hf_model": "google/gemma-4-26B-A4B-it",
+      "mlx_model": "mlx-community/gemma-4-26b-a4b-it-4bit",
+      "origin": "US (Google)",
       "size_class": "medium",
-      "context_length": 16384,
-      "vllm_args": ["--max-model-len", "16384"]
+      "context_length": 262144,
+      "vram_fraction": 0.35,
+      "vllm_args": ["--max-model-len", "32768"],
+      "tool_call_parser": "gemma4",
+      "sampling_override": {"temperature": 0.0, "top_p": 0.9, "repetition_penalty": 1.1}
     },
     {
       "id": "gpt-oss-20b",
       "name": "gpt-oss-20b",
       "description": "OpenAI open-weight reasoning model; efficient. Same family SecRouter defaults to on Bedrock.",
       "hf_model": "openai/gpt-oss-20b",
+      "mlx_model": "mlx-community/gpt-oss-20b-MXFP4-Q8",
       "origin": "US (OpenAI)",
       "size_class": "medium",
       "context_length": 32768,
+      "vram_fraction": 0.55,
       "vllm_args": []
     },
     {
@@ -36,10 +45,40 @@
       "name": "Llama 3.3 70B Instruct",
       "description": "High quality; needs a large or multi-GPU host.",
       "hf_model": "meta-llama/Llama-3.3-70B-Instruct",
+      "mlx_model": "mlx-community/Llama-3.3-70B-Instruct-4bit",
       "origin": "US (Meta)",
       "size_class": "large",
       "context_length": 32768,
-      "vllm_args": ["--tensor-parallel-size", "2"]
+      "vram_fraction": 0.90,
+      "vllm_args": ["--tensor-parallel-size", "2"],
+      "tool_call_parser": "llama3_json"
+    },
+    {
+      "id": "gemma-4-31B-it",
+      "name": "Gemma 4 — 31B",
+      "description": "Google's flagship dense model; 256K context, strong reasoning/coding — bridges server-grade quality and local execution.",
+      "hf_model": "google/gemma-4-31B-it",
+      "mlx_model": "mlx-community/gemma-4-31b-it-4bit",
+      "origin": "US (Google)",
+      "size_class": "medium",
+      "context_length": 262144,
+      "vram_fraction": 0.45,
+      "vllm_args": ["--max-model-len", "32768"],
+      "tool_call_parser": "gemma4",
+      "sampling_override": {"temperature": 0.0, "top_p": 0.9}
+    },
+    {
+      "id": "Llama-3.1-8B-Instruct",
+      "name": "Llama 3.1 8B Instruct",
+      "description": "General-purpose 8B; solid quality at moderate GPU cost. (Example of a catalog addition beyond the built-in set.)",
+      "hf_model": "meta-llama/Llama-3.1-8B-Instruct",
+      "mlx_model": "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
+      "origin": "US (Meta)",
+      "size_class": "medium",
+      "context_length": 16384,
+      "vram_fraction": 0.25,
+      "vllm_args": ["--max-model-len", "16384"],
+      "tool_call_parser": "llama3_json"
     }
   ]
 }
